@@ -441,7 +441,7 @@ button:disabled {
   gap: 6px;
 }
 
-.movimenti-filter-toolbar span {
+.movimenti-filter-toolbar label span {
   color: #64748b;
   font-size: 12px;
   font-weight: 700;
@@ -459,9 +459,19 @@ button:disabled {
 }
 
 .movimenti-filter-toolbar button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
   border-radius: 10px;
   background: #2563eb;
   padding: 10px 16px;
+}
+
+.movimenti-filter-toolbar button svg {
+  width: 16px;
+  height: 16px;
+  stroke-width: 2.2;
 }
 
 .primary-action {
@@ -470,15 +480,25 @@ button:disabled {
   box-shadow: 0 10px 22px rgba(37, 99, 235, 0.22);
 }
 
+.movimenti-filter-toolbar .revolut-action {
+  border: 1px solid rgba(14, 165, 233, 0.32);
+  background: linear-gradient(135deg, #0f172a, #0284c7);
+  box-shadow: 0 10px 22px rgba(2, 132, 199, 0.2);
+}
+
 .secondary-action {
   border: 1px solid rgba(148, 163, 184, 0.35);
   background: #ffffff;
   color: #334155;
 }
 
-.movimenti-output {
-  overflow: auto;
-  max-height: 680px;
+#movimenti-table.output-container.movimenti-output {
+  /* Movimenti: no internal scroll, page handles scrolling */
+  overflow: visible;
+  overflow-x: visible;
+  overflow-y: visible;
+  height: auto;
+  max-height: none;
   min-height: 220px;
   border: 1px solid rgba(148, 163, 184, 0.2);
   border-radius: 22px;
@@ -761,7 +781,8 @@ td.in-totals-column {
 }
 
 .movement-form input,
-.movement-form select {
+.movement-form select,
+.movement-form textarea {
   width: 100%;
   border: 1px solid rgba(148, 163, 184, 0.35);
   border-radius: 12px;
@@ -769,6 +790,11 @@ td.in-totals-column {
   color: #0f172a;
   font-size: 15px;
   padding: 11px 12px;
+}
+
+.movement-form textarea {
+  min-height: 92px;
+  resize: vertical;
 }
 
 .movement-form .toggle-row {
@@ -882,6 +908,14 @@ td.in-totals-column {
   padding: 14px;
 }
 
+.revolut-summary-box {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.revolut-summary-box .modal-balance-value {
+  font-size: 16px;
+}
+
 .movement-balance-box div {
   display: grid;
   gap: 0;
@@ -976,6 +1010,10 @@ td.in-totals-column {
 
   .movement-switch-inline {
     justify-content: space-between;
+  }
+
+  .revolut-summary-box {
+    grid-template-columns: 1fr;
   }
 }
 

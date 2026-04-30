@@ -107,6 +107,10 @@
 
             <button id="apply-movimenti-filter" type="button">Applica</button>
             <button id="open-movement-modal" class="primary-action" type="button">+ Movimento</button>
+            <button id="open-revolut-modal" class="revolut-action" type="button">
+              <i data-feather="credit-card" aria-hidden="true"></i>
+              Revolut
+            </button>
           </div>
 
           <div id="movimenti-table" class="output-container movimenti-output">Caricamento movimenti...</div>
@@ -175,6 +179,55 @@
           <div class="modal-actions">
             <button id="cancel-movement-modal" class="secondary-action" type="button">Annulla</button>
             <button id="save-movement-placeholder" class="primary-action" type="button">Salva movimento</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <div id="revolut-modal" class="modal-overlay" aria-hidden="true">
+      <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="revolut-modal-title">
+        <div class="modal-header">
+          <div>
+            <h2 id="revolut-modal-title">Revolut</h2>
+            <p>Aggiornamento saldi Revolut</p>
+          </div>
+          <button id="close-revolut-modal" class="modal-close" type="button" aria-label="Chiudi">×</button>
+        </div>
+
+        <form class="movement-form">
+          <label>
+            <span>Revolut personale</span>
+            <input id="revolut-personal" type="text" name="revolut-personal" inputmode="decimal" placeholder="0,00">
+          </label>
+
+          <label>
+            <span>Revolut cointestato</span>
+            <input id="revolut-shared" type="text" name="revolut-shared" inputmode="decimal" placeholder="0,00">
+          </label>
+
+          <label>
+            <span>Note opzionale</span>
+            <textarea id="revolut-note" name="revolut-note" rows="3" placeholder="Aggiungi una nota"></textarea>
+          </label>
+
+          <div class="movement-balance-box revolut-summary-box">
+            <div class="modal-balance-item">
+              <div class="modal-balance-label">Ultimo Revolut personale</div>
+              <div id="last-revolut-personal" class="modal-balance-value">Non disponibile</div>
+            </div>
+            <div class="modal-balance-item">
+              <div class="modal-balance-label">Ultimo Revolut cointestato</div>
+              <div id="last-revolut-shared" class="modal-balance-value">Non disponibile</div>
+            </div>
+            <div class="modal-balance-item">
+              <div class="modal-balance-label">Data ultimo aggiornamento</div>
+              <div id="last-revolut-updated" class="modal-balance-value">Non disponibile</div>
+            </div>
+          </div>
+
+          <div class="modal-actions">
+            <button id="cancel-revolut-modal" class="secondary-action" type="button">Annulla</button>
+            <button id="save-revolut-placeholder" class="primary-action" type="button">Salva Revolut</button>
           </div>
         </form>
       </div>

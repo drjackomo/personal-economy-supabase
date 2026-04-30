@@ -17,6 +17,7 @@ const monthlyExpenseElement = document.getElementById("monthly-expense");
 const movementModal = document.getElementById("movement-modal");
 const movementModalTitle = document.getElementById("movement-modal-title");
 const openMovementModalButton = document.getElementById("open-movement-modal");
+const openRevolutModalButton = document.getElementById("open-revolut-modal");
 const closeMovementModalButton = document.getElementById("close-movement-modal");
 const cancelMovementModalButton = document.getElementById("cancel-movement-modal");
 const saveMovementPlaceholderButton = document.getElementById("save-movement-placeholder");
@@ -28,6 +29,16 @@ const movementInTotalsSwitch = document.getElementById("consuntivoSwitch");
 const currentBalancePreview = document.getElementById("current-balance-preview");
 const nextBalancePreview = document.getElementById("next-balance-preview");
 const movementModalError = document.getElementById("movement-modal-error");
+const revolutModal = document.getElementById("revolut-modal");
+const closeRevolutModalButton = document.getElementById("close-revolut-modal");
+const cancelRevolutModalButton = document.getElementById("cancel-revolut-modal");
+const saveRevolutPlaceholderButton = document.getElementById("save-revolut-placeholder");
+const revolutPersonalInput = document.getElementById("revolut-personal");
+const revolutSharedInput = document.getElementById("revolut-shared");
+const revolutNoteInput = document.getElementById("revolut-note");
+const lastRevolutPersonalElement = document.getElementById("last-revolut-personal");
+const lastRevolutSharedElement = document.getElementById("last-revolut-shared");
+const lastRevolutUpdatedElement = document.getElementById("last-revolut-updated");
 const deleteMovementModal = document.getElementById("delete-movement-modal");
 const cancelDeleteMovementButton = document.getElementById("cancel-delete-movement");
 const confirmDeleteMovementButton = document.getElementById("confirm-delete-movement");
@@ -483,6 +494,138 @@ async function openMovementModal() {
   }
 }
 
+function openRevolutModal() {
+  resetRevolutForm();
+  revolutModal.classList.add("is-open");
+  revolutModal.setAttribute("aria-hidden", "false");
+  fetchLatestRevolutSnapshot();
+}
+
+function closeRevolutModal() {
+  revolutModal.classList.remove("is-open");
+  revolutModal.setAttribute("aria-hidden", "true");
+}
+
+function resetRevolutSummary() {
+  lastRevolutPersonalElement.textContent = "Non disponibile";
+  lastRevolutSharedElement.textContent = "Non disponibile";
+  lastRevolutUpdatedElement.textContent = "Non disponibile";
+}
+
+function resetRevolutForm() {
+  revolutPersonalInput.value = "";
+  revolutSharedInput.value = "";
+  revolutNoteInput.value = "";
+}
+
+function formatItalianDateTime(value) {
+  if (!value) return "Non disponibile";
+
+  return new Date(value).toLocaleString("it-IT", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function renderRevolutSnapshot(snapshot) {
+  if (!snapshot) {
+    resetRevolutSummary();
+    return;
+  }
+
+  lastRevolutPersonalElement.textContent = formatEuro(snapshot.revolut_personal);
+  lastRevolutSharedElement.textContent = formatEuro(snapshot.revolut_join);
+  lastRevolutUpdatedElement.textContent = formatItalianDateTime(snapshot.date ?? snapshot.created_at);
+}
+
+function getRevolutSupabaseClient() {
+  if (!supabaseClient || typeof supabaseClient.from !== "function") {
+    console.error("[Revolut] client not found", supabaseClient);
+    return null;
+  }
+
+  return supabaseClient;
+}
+
+async function fetchLatestRevolutSnapshot() {
+  const revolutClient = getRevolutSupabaseClient();
+
+  if (!revolutClient) {
+    console.error("Credenziali Supabase mancanti.");
+    resetRevolutSummary();
+    return null;
+  }
+
+  try {
+    const { data, error } = await revolutClient
+      .from("revolut_snapshots")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .limit(1);
+
+    if (error) {
+      console.error("Errore lettura snapshot Revolut:", error);
+      resetRevolutSummary();
+      return null;
+    }
+
+    const snapshot = data?.[0] ?? null;
+    renderRevolutSnapshot(snapshot);
+    return snapshot;
+  } catch (error) {
+    console.error("Errore lettura snapshot Revolut:", error);
+    resetRevolutSummary();
+    return null;
+  }
+}
+
+async function saveRevolutSnapshot() {
+  const revolutClient = getRevolutSupabaseClient();
+
+  if (!revolutClient) {
+    console.error("Credenziali Supabase mancanti.");
+    return;
+  }
+
+  const revolutPersonale = parseItalianAmount(revolutPersonalInput.value);
+  const revolutCointestato = parseItalianAmount(revolutSharedInput.value);
+
+  if (!Number.isFinite(revolutPersonale) || !Number.isFinite(revolutCointestato)) {
+    console.error("Inserisci valori Revolut validi.");
+    return;
+  }
+
+  const payload = {
+    date: new Date().toISOString().split("T")[0],
+    revolut_personal: revolutPersonale,
+    revolut_join: revolutCointestato,
+    note: revolutNoteInput.value.trim() || null,
+  };
+
+  saveRevolutPlaceholderButton.disabled = true;
+  saveRevolutPlaceholderButton.textContent = "Salvo...";
+
+  try {
+    const { error } = await revolutClient.from("revolut_snapshots").insert(payload);
+
+    if (error) {
+      console.error("Errore salvataggio snapshot Revolut:", error);
+      return;
+    }
+
+    closeRevolutModal();
+    await fetchLatestRevolutSnapshot();
+  } catch (error) {
+    console.error("Errore salvataggio snapshot Revolut:", error);
+  } finally {
+    saveRevolutPlaceholderButton.disabled = false;
+    saveRevolutPlaceholderButton.textContent = "Salva Revolut";
+  }
+}
+
 function closeMovementModal() {
   movementModal.classList.remove("is-open");
   movementModal.setAttribute("aria-hidden", "true");
@@ -788,6 +931,25 @@ function initMovementModal() {
   movimentiTableElement.addEventListener("click", handleMovimentiTableAction);
 }
 
+function initRevolutModal() {
+  openRevolutModalButton.addEventListener("click", openRevolutModal);
+  closeRevolutModalButton.addEventListener("click", closeRevolutModal);
+  cancelRevolutModalButton.addEventListener("click", closeRevolutModal);
+  saveRevolutPlaceholderButton.addEventListener("click", saveRevolutSnapshot);
+
+  revolutModal.addEventListener("click", (event) => {
+    if (event.target === revolutModal) {
+      closeRevolutModal();
+    }
+  });
+
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && revolutModal.classList.contains("is-open")) {
+      closeRevolutModal();
+    }
+  });
+}
+
 async function loadMovimenti() {
   if (!supabaseClient) {
     renderMovimentiState("error-state", "Credenziali Supabase mancanti.");
@@ -854,6 +1016,24 @@ if (movimentiTableElement && movimentiMonthSelect && movimentiYearSelect && appl
     movementModalError
   ) {
     initMovementModal();
+  }
+  if (
+    revolutModal &&
+    openRevolutModalButton &&
+    closeRevolutModalButton &&
+    cancelRevolutModalButton &&
+    saveRevolutPlaceholderButton &&
+    revolutPersonalInput &&
+    revolutSharedInput &&
+    revolutNoteInput &&
+    lastRevolutPersonalElement &&
+    lastRevolutSharedElement &&
+    lastRevolutUpdatedElement
+  ) {
+    initRevolutModal();
+  }
+  if (window.feather) {
+    window.feather.replace();
   }
   if (
     deleteMovementModal &&
