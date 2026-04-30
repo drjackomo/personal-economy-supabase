@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="it">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Movimenti - Personal Economy</title>
+    <link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
+    <link rel="stylesheet" href="css/styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://unpkg.com/feather-icons"></script>
+    <script src="js/app.js" defer></script>
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-main">
+          <img src="assets/favicon.svg" class="logo-icon" alt="">
+          <div class="brand-title">Personal Economy</div>
+        </div>
+        <div class="brand-subtitle">Personal Finance</div>
+      </div>
+
+      <nav class="main-nav" aria-label="Menu principale">
+        <a class="nav-link" href="index.html">Dashboard</a>
+        <a class="nav-link active" href="movimenti.html">Movimenti</a>
+        <a class="nav-link" href="dossier.html">Dossier</a>
+        <a class="nav-link" href="titoli.html">Titoli</a>
+        <div class="nav-dropdown">
+          <button class="nav-link nav-dropdown-trigger" type="button">Inserisci</button>
+          <div class="nav-dropdown-menu">
+            <a href="insert-movimenti.html">Movimento</a>
+            <a href="insert-titoli.html">Titolo</a>
+          </div>
+        </div>
+      </nav>
+
+      <div class="topbar-status">Supabase</div>
+    </header>
+
+    <main class="app movimenti-page">
+      <div class="movimenti-heading">
+        <h1>Movimenti</h1>
+        <p class="subtitle">Elenco movimenti anno in corso</p>
+      </div>
+
+      <div class="movimenti-layout">
+        <aside class="summary-column" aria-label="Riepiloghi movimenti">
+          <article class="summary-card summary-card-year-total">
+            <h2>Consuntivo anno</h2>
+            <div id="yearly-total" class="summary-value">€ 0,00</div>
+          </article>
+
+          <article class="summary-card summary-card-year-flow">
+            <h2>Anno</h2>
+            <div class="summary-row">
+              <span>Entrate</span>
+              <strong id="yearly-income" class="summary-income">€ 0,00</strong>
+            </div>
+            <div class="summary-row">
+              <span>Uscite</span>
+              <strong id="yearly-expense" class="summary-expense">€ 0,00</strong>
+            </div>
+          </article>
+
+          <article class="summary-card summary-card-month-total">
+            <h2>Consuntivo mese</h2>
+            <div id="monthly-total" class="summary-value">€ 0,00</div>
+          </article>
+
+          <article class="summary-card summary-card-month-flow">
+            <h2>Mese</h2>
+            <div class="summary-row">
+              <span>Entrate</span>
+              <strong id="monthly-income" class="summary-income">€ 0,00</strong>
+            </div>
+            <div class="summary-row">
+              <span>Uscite</span>
+              <strong id="monthly-expense" class="summary-expense">€ 0,00</strong>
+            </div>
+          </article>
+        </aside>
+
+        <section class="movimenti-table-column" aria-label="Tabella movimenti">
+          <div class="movimenti-filter-toolbar" aria-label="Filtro periodo movimenti">
+            <label>
+              <span>Mese</span>
+              <select id="movimenti-month">
+                <option value="0">Gennaio</option>
+                <option value="1">Febbraio</option>
+                <option value="2">Marzo</option>
+                <option value="3">Aprile</option>
+                <option value="4">Maggio</option>
+                <option value="5">Giugno</option>
+                <option value="6">Luglio</option>
+                <option value="7">Agosto</option>
+                <option value="8">Settembre</option>
+                <option value="9">Ottobre</option>
+                <option value="10">Novembre</option>
+                <option value="11">Dicembre</option>
+              </select>
+            </label>
+
+            <label>
+              <span>Anno</span>
+              <select id="movimenti-year"></select>
+            </label>
+
+            <button id="apply-movimenti-filter" type="button">Applica</button>
+            <button id="open-movement-modal" class="primary-action" type="button">+ Movimento</button>
+          </div>
+
+          <div id="movimenti-table" class="output-container movimenti-output">Caricamento movimenti...</div>
+        </section>
+      </div>
+    </main>
+
+    <div id="movement-modal" class="modal-overlay" aria-hidden="true">
+      <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="movement-modal-title">
+        <div class="modal-header">
+          <div>
+            <h2 id="movement-modal-title">Nuovo movimento</h2>
+            <p>Inserimento movimento manuale</p>
+          </div>
+          <button id="close-movement-modal" class="modal-close" type="button" aria-label="Chiudi">×</button>
+        </div>
+
+        <form class="movement-form">
+          <label>
+            <span>Data</span>
+            <input id="movement-date" type="date" name="date">
+          </label>
+
+          <label>
+            <span>Descrizione</span>
+            <input id="movement-description" type="text" name="description" placeholder="Descrizione movimento">
+          </label>
+
+          <label>
+            <span>Importo</span>
+            <input id="movement-amount" type="text" name="amount" inputmode="decimal" placeholder="0,00">
+          </label>
+
+          <div class="movement-options-row">
+            <div class="switch-group">
+              <span class="switch-label left">Uscita</span>
+              <label class="switch">
+                <input type="checkbox" id="tipoSwitch">
+                <span class="slider"></span>
+              </label>
+              <span class="switch-label right">Entrata</span>
+            </div>
+
+            <div class="movement-switch-inline">
+              <span>In consuntivo</span>
+              <label class="switch">
+                <input type="checkbox" id="consuntivoSwitch" checked>
+                <span class="slider"></span>
+              </label>
+            </div>
+          </div>
+
+          <div class="movement-balance-box">
+            <div class="modal-balance-item">
+              <div class="modal-balance-label">Saldo attuale</div>
+              <div id="current-balance-preview" class="modal-balance-value">€ 0,00</div>
+            </div>
+            <div class="modal-balance-item">
+              <div class="modal-balance-label">Saldo dopo inserimento</div>
+              <div id="next-balance-preview" class="modal-balance-value">€ 0,00</div>
+            </div>
+          </div>
+
+          <div id="movement-modal-error" class="modal-error" aria-live="polite"></div>
+
+          <div class="modal-actions">
+            <button id="cancel-movement-modal" class="secondary-action" type="button">Annulla</button>
+            <button id="save-movement-placeholder" class="primary-action" type="button">Salva movimento</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <div id="delete-movement-modal" class="modal-overlay" aria-hidden="true">
+      <div class="modal-card delete-modal-card" role="dialog" aria-modal="true" aria-labelledby="delete-movement-title">
+        <div class="modal-header">
+          <div>
+            <h2 id="delete-movement-title">Elimina movimento</h2>
+            <p>Vuoi davvero eliminare questo movimento?</p>
+          </div>
+        </div>
+
+        <div id="delete-movement-modal-error" class="modal-error" aria-live="polite"></div>
+
+        <div class="modal-actions">
+          <button id="cancel-delete-movement" class="secondary-action" type="button">Annulla</button>
+          <button id="confirm-delete-movement" class="danger-action" type="button">Elimina</button>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

@@ -3,11 +3,9 @@
   <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Personal Economy - Supabase Test</title>
+    <title>Dossier - Personal Economy</title>
     <link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
     <link rel="stylesheet" href="css/styles.css">
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="js/app.js" defer></script>
   </head>
   <body>
     <header class="topbar">
@@ -20,9 +18,9 @@
       </div>
 
       <nav class="main-nav" aria-label="Menu principale">
-        <a class="nav-link active" href="index.html">Dashboard</a>
+        <a class="nav-link" href="index.html">Dashboard</a>
         <a class="nav-link" href="movimenti.html">Movimenti</a>
-        <a class="nav-link" href="dossier.html">Dossier</a>
+        <a class="nav-link active" href="dossier.html">Dossier</a>
         <a class="nav-link" href="titoli.html">Titoli</a>
         <div class="nav-dropdown">
           <button class="nav-link nav-dropdown-trigger" type="button">Inserisci</button>
@@ -39,21 +37,9 @@
     <main class="app">
       <section class="panel">
         <div class="section-heading">
-          <h1>Dashboard</h1>
-          <p class="subtitle">Test connessione Supabase e lettura tabella transactions.</p>
+          <h1>Dossier</h1>
+          <p class="subtitle">Pagina in costruzione.</p>
         </div>
-
-        <div class="status-row">
-          <span class="status-label">Stato:</span>
-          <span id="connection-status" class="status status-warning">Credenziali da configurare</span>
-        </div>
-
-        <button id="load-transactions" type="button">Carica transactions</button>
-
-        <section class="results">
-          <h2>Risultati</h2>
-          <div id="transactions-output" class="output-container">Nessun dato caricato.</div>
-        </section>
       </section>
     </main>
   </body>
