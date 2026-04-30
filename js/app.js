@@ -43,6 +43,8 @@ const deleteMovementModal = document.getElementById("delete-movement-modal");
 const cancelDeleteMovementButton = document.getElementById("cancel-delete-movement");
 const confirmDeleteMovementButton = document.getElementById("confirm-delete-movement");
 const deleteMovementModalError = document.getElementById("delete-movement-modal-error");
+const titoliInsertRoot = document.getElementById("titoli-insert-root");
+const titoliSnapshotDateInput = document.getElementById("titoli-snapshot-date");
 
 const hasCredentials =
   SUPABASE_URL !== "INSERISCI_QUI_SUPABASE_URL" &&
@@ -950,6 +952,404 @@ function initRevolutModal() {
   });
 }
 
+function getFirstDefined(record, keys, fallback = null) {
+  for (const key of keys) {
+    if (Object.prototype.hasOwnProperty.call(record, key) && record[key] !== null && record[key] !== undefined) {
+      return record[key];
+    }
+  }
+
+  return fallback;
+}
+
+function getTitoliDossierId(dossier) {
+  return String(getFirstDefined(dossier, ["account_id", "dossier_id", "id"], ""));
+}
+
+function getTitoliDossierLabel(dossier) {
+  const fallback = getTitoliDossierId(dossier);
+  return String(getFirstDefined(dossier, ["label", "name", "nome", "account_name"], fallback));
+}
+
+function getTitoliDossierOrder(dossier) {
+  const order = Number(getFirstDefined(dossier, ["order", "ordine", "sort_order"], Number.MAX_SAFE_INTEGER));
+  return Number.isFinite(order) ? order : Number.MAX_SAFE_INTEGER;
+}
+
+function isTitoliDossierActive(dossier) {
+  const visible = getFirstDefined(dossier, ["visible"], true);
+  const isClosed = getFirstDefined(dossier, ["is_closed"], false);
+  return visible !== false && isClosed !== true;
+}
+
+function getTitoliAssetDossierId(asset) {
+  return String(getFirstDefined(asset, ["dossier_id", "account_id"], ""));
+}
+
+function getTitoliAssetId(asset) {
+  return String(getFirstDefined(asset, ["id"], ""));
+}
+
+function getTitoliAssetName(asset) {
+  const fallback = getTitoliAssetId(asset);
+  return String(getFirstDefined(asset, ["asset_name", "name", "nome", "titolo"], fallback));
+}
+
+function getTitoliAssetIsin(asset) {
+  return String(getFirstDefined(asset, ["isin"], ""));
+}
+
+function getTitoliSnapshotDossierId(snapshot) {
+  return String(getFirstDefined(snapshot, ["dossier_id", "account_id"], ""));
+}
+
+function getTitoliSnapshotAssetId(snapshot) {
+  return String(getFirstDefined(snapshot, ["asset_id", "portfolio_asset_id", "id"], ""));
+}
+
+function getTitoliSnapshotIsin(snapshot) {
+  return String(getFirstDefined(snapshot, ["isin"], ""));
+}
+
+function getTitoliSnapshotDate(snapshot) {
+  return getFirstDefined(snapshot, ["snapshot_date", "date", "data"], null);
+}
+
+function getTitoliSnapshotValue(snapshot) {
+  return getFirstDefined(snapshot, ["market_value", "value", "total_value", "total", "valore", "amount"], null);
+}
+
+function isTitoliAssetActive(asset) {
+  const visible = getFirstDefined(asset, ["visible"], false);
+  const isClosed = getFirstDefined(asset, ["is_closed"], false);
+  return visible === true && isClosed !== true;
+}
+
+function sortTitoliDossiers(a, b) {
+  const orderDiff = getTitoliDossierOrder(a) - getTitoliDossierOrder(b);
+  if (orderDiff !== 0) return orderDiff;
+  return getTitoliDossierLabel(a).localeCompare(getTitoliDossierLabel(b), "it");
+}
+
+function sortTitoliAssets(a, b) {
+  return getTitoliAssetName(a).localeCompare(getTitoliAssetName(b), "it");
+}
+
+function renderTitoliInsertState(className, message, withSpinner = false) {
+  titoliInsertRoot.textContent = "";
+
+  const stateElement = document.createElement("div");
+  stateElement.className = className;
+
+  if (withSpinner) {
+    const spinner = document.createElement("span");
+    spinner.className = "spinner";
+    stateElement.appendChild(spinner);
+  }
+
+  const messageElement = document.createElement("span");
+  messageElement.textContent = message;
+  stateElement.appendChild(messageElement);
+  titoliInsertRoot.appendChild(stateElement);
+}
+
+function parseTitoliValue(value) {
+  const rawValue = String(value ?? "").trim();
+
+  if (!rawValue) {
+    return 0;
+  }
+
+  const compactValue = rawValue.replace(/\s/g, "");
+  const hasComma = compactValue.includes(",");
+  const hasDot = compactValue.includes(".");
+  let normalizedValue = compactValue;
+
+  if (hasComma) {
+    normalizedValue = compactValue.replace(/\./g, "").replace(",", ".");
+  } else if (hasDot) {
+    const parts = compactValue.split(".");
+    const lastPart = parts[parts.length - 1];
+    normalizedValue =
+      parts.length > 2 || lastPart.length === 3 ? parts.join("") : compactValue;
+  }
+
+  const parsedValue = Number(normalizedValue);
+  return Number.isFinite(parsedValue) ? parsedValue : 0;
+}
+
+function formatTitoliValue(value) {
+  const number = Number(value);
+
+  if (!Number.isFinite(number)) {
+    return "";
+  }
+
+  return new Intl.NumberFormat("it-IT", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+    useGrouping: true,
+  }).format(number);
+}
+
+function formatTitoliMarketInput(input) {
+  const amount = parseTitoliValue(input.value);
+
+  if (!input.value.trim()) {
+    input.value = "";
+    return;
+  }
+
+  input.value = formatTitoliValue(amount);
+}
+
+function getTitoliSnapshotTime(snapshot) {
+  const snapshotDate = getTitoliSnapshotDate(snapshot);
+  const timestamp = snapshotDate ? new Date(snapshotDate).getTime() : 0;
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function getTitoliLookupKey(dossierId, value) {
+  return `${String(dossierId)}|${String(value).trim().toUpperCase()}`;
+}
+
+function setLatestTitoliSnapshot(map, key, snapshot) {
+  if (!key.endsWith("|") && (!map.has(key) || getTitoliSnapshotTime(snapshot) >= getTitoliSnapshotTime(map.get(key)))) {
+    map.set(key, snapshot);
+  }
+}
+
+function buildLatestTitoliSnapshots(snapshots) {
+  const byDossierIsin = new Map();
+  const byDossierAsset = new Map();
+
+  snapshots.forEach((snapshot) => {
+    const dossierId = getTitoliSnapshotDossierId(snapshot);
+    const isin = getTitoliSnapshotIsin(snapshot);
+    const assetId = getTitoliSnapshotAssetId(snapshot);
+
+    setLatestTitoliSnapshot(byDossierIsin, getTitoliLookupKey(dossierId, isin), snapshot);
+    setLatestTitoliSnapshot(byDossierAsset, getTitoliLookupKey(dossierId, assetId), snapshot);
+  });
+
+  return { byDossierAsset, byDossierIsin };
+}
+
+function findLatestTitoliSnapshot(asset, dossierId, latestSnapshots) {
+  const assetIsin = getTitoliAssetIsin(asset);
+  const assetId = getTitoliAssetId(asset);
+
+  return (
+    latestSnapshots.byDossierIsin.get(getTitoliLookupKey(dossierId, assetIsin)) ??
+    latestSnapshots.byDossierAsset.get(getTitoliLookupKey(dossierId, assetId)) ??
+    null
+  );
+}
+
+function updateTitoliDossierTotals(card) {
+  const inputs = Array.from(card.querySelectorAll(".titoli-market-input"));
+  const initialTotal = Number(card.dataset.initialTotal || 0);
+  const currentTotal = inputs.reduce((total, input) => total + parseTitoliValue(input.value), 0);
+  const delta = currentTotal - initialTotal;
+  const previousTotalElement = card.querySelector(".titoli-total-previous strong");
+  const currentTotalElement = card.querySelector(".titoli-total-current strong");
+  const deltaElement = card.querySelector(".titoli-total-delta");
+
+  previousTotalElement.textContent = formatEuro(initialTotal);
+  currentTotalElement.textContent = formatEuro(currentTotal);
+  deltaElement.classList.remove("value-positive", "value-negative", "value-neutral");
+
+  if (delta > 0) {
+    deltaElement.textContent = `▲ ${formatEuro(delta)}`;
+    deltaElement.classList.add("value-positive");
+  } else if (delta < 0) {
+    deltaElement.textContent = `▼ ${formatEuro(Math.abs(delta))}`;
+    deltaElement.classList.add("value-negative");
+  } else {
+    deltaElement.textContent = formatEuro(0);
+    deltaElement.classList.add("value-neutral");
+  }
+}
+
+function createTitoliTotalsBar() {
+  const totalsBar = document.createElement("div");
+  const previousTotal = document.createElement("div");
+  const currentTotal = document.createElement("div");
+  const previousLabel = document.createElement("span");
+  const previousValue = document.createElement("strong");
+  const currentLabel = document.createElement("span");
+  const currentValue = document.createElement("strong");
+  const deltaValue = document.createElement("span");
+
+  totalsBar.className = "titoli-totals-bar";
+  previousTotal.className = "titoli-total-previous";
+  currentTotal.className = "titoli-total-current";
+  previousLabel.textContent = "Totale caricato";
+  currentLabel.textContent = "Nuovo totale";
+  deltaValue.className = "titoli-total-delta value-neutral";
+
+  previousTotal.appendChild(previousLabel);
+  previousTotal.appendChild(previousValue);
+  currentTotal.appendChild(currentLabel);
+  currentTotal.appendChild(currentValue);
+  currentTotal.appendChild(deltaValue);
+  totalsBar.appendChild(previousTotal);
+  totalsBar.appendChild(currentTotal);
+
+  return totalsBar;
+}
+
+function createTitoliAssetRow(asset, dossierId, latestSnapshot, card) {
+  const assetRow = document.createElement("div");
+  const assetInfo = document.createElement("div");
+  const assetName = document.createElement("div");
+  const assetMeta = document.createElement("div");
+  const marketInput = document.createElement("input");
+  const assetId = getTitoliAssetId(asset);
+  const assetLabel = getTitoliAssetName(asset);
+  const assetIsin = getTitoliAssetIsin(asset);
+  const latestValue = latestSnapshot ? parseTitoliValue(getTitoliSnapshotValue(latestSnapshot)) : 0;
+
+  assetRow.className = "titoli-asset-row";
+  assetInfo.className = "titoli-asset-info";
+  assetName.className = "titoli-asset-name";
+  assetMeta.className = "titoli-asset-meta";
+  marketInput.className = "titoli-market-input";
+  marketInput.type = "text";
+  marketInput.inputMode = "decimal";
+  marketInput.placeholder = "0,00";
+  marketInput.dataset.assetId = assetId;
+  marketInput.dataset.assetName = assetLabel;
+  marketInput.dataset.assetIsin = assetIsin;
+  marketInput.dataset.dossierId = dossierId;
+  marketInput.setAttribute("aria-label", `Valore di mercato ${assetLabel}`);
+
+  if (latestSnapshot) {
+    marketInput.value = formatTitoliValue(latestValue);
+  }
+
+  marketInput.addEventListener("input", () => updateTitoliDossierTotals(card));
+  marketInput.addEventListener("blur", () => {
+    formatTitoliMarketInput(marketInput);
+    updateTitoliDossierTotals(card);
+  });
+
+  assetName.textContent = assetLabel || "Titolo senza nome";
+  assetMeta.textContent = assetIsin ? `ISIN ${assetIsin}` : assetId ? `ID ${assetId}` : "Identificativo non disponibile";
+
+  assetInfo.appendChild(assetName);
+  assetInfo.appendChild(assetMeta);
+  assetRow.appendChild(assetInfo);
+  assetRow.appendChild(marketInput);
+
+  return { initialValue: latestSnapshot ? latestValue : 0, row: assetRow };
+}
+
+function renderTitoliInsertCards(dossiers, assets, snapshots) {
+  const activeDossiers = dossiers.filter(isTitoliDossierActive).sort(sortTitoliDossiers);
+  const activeAssets = assets.filter(isTitoliAssetActive).sort(sortTitoliAssets);
+  const latestSnapshots = buildLatestTitoliSnapshots(snapshots);
+  const assetsByDossier = new Map();
+
+  activeAssets.forEach((asset) => {
+    const dossierId = getTitoliAssetDossierId(asset);
+    if (!assetsByDossier.has(dossierId)) {
+      assetsByDossier.set(dossierId, []);
+    }
+    assetsByDossier.get(dossierId).push(asset);
+  });
+
+  titoliInsertRoot.textContent = "";
+
+  if (!activeDossiers.length) {
+    renderTitoliInsertState("empty-state", "Nessun dossier attivo trovato.");
+    return;
+  }
+
+  activeDossiers.forEach((dossier) => {
+    const dossierId = getTitoliDossierId(dossier);
+    const dossierAssets = assetsByDossier.get(dossierId) ?? [];
+    const card = document.createElement("article");
+    const header = document.createElement("div");
+    const title = document.createElement("h2");
+    const meta = document.createElement("p");
+    const list = document.createElement("div");
+    const totalsBar = createTitoliTotalsBar();
+    let initialTotal = 0;
+
+    card.className = "titoli-dossier-card";
+    header.className = "titoli-dossier-header";
+    list.className = "titoli-assets-list";
+    title.textContent = getTitoliDossierLabel(dossier);
+    meta.textContent = `${dossierAssets.length} titoli attivi`;
+
+    header.appendChild(title);
+    header.appendChild(meta);
+    card.appendChild(header);
+
+    if (dossierAssets.length) {
+      dossierAssets.forEach((asset) => {
+        const latestSnapshot = findLatestTitoliSnapshot(asset, dossierId, latestSnapshots);
+        const { initialValue, row } = createTitoliAssetRow(asset, dossierId, latestSnapshot, card);
+        initialTotal += initialValue;
+        list.appendChild(row);
+      });
+    } else {
+      const emptyRow = document.createElement("div");
+      emptyRow.className = "titoli-empty-row";
+      emptyRow.textContent = "Nessun titolo attivo per questo dossier.";
+      list.appendChild(emptyRow);
+    }
+
+    card.dataset.initialTotal = String(initialTotal);
+    card.appendChild(list);
+    card.appendChild(totalsBar);
+    titoliInsertRoot.appendChild(card);
+    updateTitoliDossierTotals(card);
+  });
+}
+
+async function loadTitoliInsertReadOnly() {
+  if (!supabaseClient) {
+    renderTitoliInsertState("error-state", "Credenziali Supabase mancanti.");
+    return;
+  }
+
+  renderTitoliInsertState("loading-state", "Caricamento titoli...", true);
+
+  try {
+    const [dossiersResult, assetsResult, snapshotsResult] = await Promise.all([
+      supabaseClient.from("dossiers").select("*"),
+      supabaseClient.from("portfolio_assets").select("*"),
+      supabaseClient.from("portfolio_snapshots").select("*"),
+    ]);
+
+    if (dossiersResult.error) {
+      renderTitoliInsertState("error-state", `Errore lettura dossier: ${dossiersResult.error.message}`);
+      return;
+    }
+
+    if (assetsResult.error) {
+      renderTitoliInsertState("error-state", `Errore lettura titoli: ${assetsResult.error.message}`);
+      return;
+    }
+
+    if (snapshotsResult.error) {
+      renderTitoliInsertState("error-state", `Errore lettura snapshot titoli: ${snapshotsResult.error.message}`);
+      return;
+    }
+
+    renderTitoliInsertCards(dossiersResult.data ?? [], assetsResult.data ?? [], snapshotsResult.data ?? []);
+  } catch (error) {
+    renderTitoliInsertState("error-state", `Errore lettura titoli: ${error.message}`);
+  }
+}
+
+function initTitoliInsertPage() {
+  titoliSnapshotDateInput.value = new Date().toISOString().split("T")[0];
+  loadTitoliInsertReadOnly();
+}
+
 async function loadMovimenti() {
   if (!supabaseClient) {
     renderMovimentiState("error-state", "Credenziali Supabase mancanti.");
@@ -995,6 +1395,10 @@ if (loadButton && statusElement && outputElement) {
   }
 
   loadButton.addEventListener("click", loadTransactions);
+}
+
+if (titoliInsertRoot && titoliSnapshotDateInput) {
+  initTitoliInsertPage();
 }
 
 if (movimentiTableElement && movimentiMonthSelect && movimentiYearSelect && applyMovimentiFilterButton) {

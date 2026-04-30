@@ -6,6 +6,8 @@
     <title>Insert Titoli - Personal Economy</title>
     <link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
     <link rel="stylesheet" href="css/styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="js/app.js" defer></script>
   </head>
   <body>
     <header class="topbar">
@@ -37,8 +39,22 @@
     <main class="app">
       <section class="panel">
         <div class="section-heading">
-          <h1>Insert Titoli</h1>
-          <p class="subtitle">Pagina in costruzione.</p>
+          <h1>Inserimento Titoli</h1>
+          <p class="subtitle">Snapshot valori di mercato per dossier.</p>
+        </div>
+
+        <div class="titoli-insert-toolbar" aria-label="Impostazioni snapshot titoli">
+          <label>
+            <span>Data snapshot</span>
+            <input id="titoli-snapshot-date" type="date" name="snapshot-date">
+          </label>
+        </div>
+
+        <div id="titoli-insert-root" class="titoli-insert-root">
+          <div class="loading-state">
+            <span class="spinner"></span>
+            <span>Caricamento titoli...</span>
+          </div>
         </div>
       </section>
     </main>
