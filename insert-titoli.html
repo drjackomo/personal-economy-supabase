@@ -7,56 +7,28 @@
     <link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
     <link rel="stylesheet" href="css/styles.css">
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
     <script src="js/app.js" defer></script>
   </head>
   <body>
-    <header class="topbar">
-      <div class="brand">
-        <div class="brand-main">
-          <img src="assets/favicon.svg" class="logo-icon" alt="">
-          <div class="brand-title">Personal Economy</div>
-        </div>
-        <div class="brand-subtitle">Personal Finance</div>
+    <div id="navbar-root"></div>
+
+    <main class="app movimenti-page titoli-insert-page">
+      <div class="titoli-page-heading">
+        <h1>Inserimento Titoli</h1>
       </div>
 
-      <nav class="main-nav" aria-label="Menu principale">
-        <a class="nav-link" href="index.html">Dashboard</a>
-        <a class="nav-link" href="movimenti.html">Movimenti</a>
-        <a class="nav-link" href="dossier.html">Dossier</a>
-        <a class="nav-link" href="titoli.html">Titoli</a>
-        <div class="nav-dropdown">
-          <button class="nav-link nav-dropdown-trigger active" type="button">Inserisci</button>
-          <div class="nav-dropdown-menu">
-            <a href="insert-movimenti.html">Movimento</a>
-            <a class="active" href="insert-titoli.html">Titolo</a>
-          </div>
-        </div>
-      </nav>
-
-      <div class="topbar-status">Supabase</div>
-    </header>
-
-    <main class="app">
-      <section class="panel">
-        <div class="section-heading">
-          <h1>Inserimento Titoli</h1>
-          <p class="subtitle">Snapshot valori di mercato per dossier.</p>
-        </div>
-
-        <div class="titoli-insert-toolbar" aria-label="Impostazioni snapshot titoli">
-          <label>
-            <span>Data snapshot</span>
-            <input id="titoli-snapshot-date" type="date" name="snapshot-date">
-          </label>
-        </div>
-
-        <div id="titoli-insert-root" class="titoli-insert-root">
-          <div class="loading-state">
-            <span class="spinner"></span>
-            <span>Caricamento titoli...</span>
-          </div>
-        </div>
+      <input id="titoli-snapshot-date" type="hidden" name="snapshot-date">
+      <section class="titoli-week-card" aria-label="Calendario snapshot">
+        <div id="titoli-week-picker" class="titoli-week-picker" aria-label="Selettore settimana snapshot"></div>
       </section>
+
+      <div id="titoli-insert-root" class="titoli-insert-root">
+        <div class="loading-state">
+          <span class="spinner"></span>
+          <span>Caricamento titoli...</span>
+        </div>
+      </div>
     </main>
   </body>
 </html>

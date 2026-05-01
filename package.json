@@ -1,0 +1,13 @@
+{
+  "name": "personal-economy-supabase",
+  "type": "module",
+  "scripts": {
+    "check": "node scripts/check-supabase.js",
+    "sync:portfolio": "node scripts/sync-portfolio-snapshots.js"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.49.4",
+    "csv-parse": "^6.2.1",
+    "dotenv": "^16.4.7"
+  }
+}

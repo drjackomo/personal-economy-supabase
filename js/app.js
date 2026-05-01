@@ -45,6 +45,8 @@ const confirmDeleteMovementButton = document.getElementById("confirm-delete-move
 const deleteMovementModalError = document.getElementById("delete-movement-modal-error");
 const titoliInsertRoot = document.getElementById("titoli-insert-root");
 const titoliSnapshotDateInput = document.getElementById("titoli-snapshot-date");
+const titoliWeekPicker = document.getElementById("titoli-week-picker");
+const navbarRoot = document.getElementById("navbar-root");
 
 const hasCredentials =
   SUPABASE_URL !== "INSERISCI_QUI_SUPABASE_URL" &&
@@ -54,10 +56,43 @@ let movementCurrentBalance = 0;
 let modalMode = "create";
 let editingTxId = null;
 let pendingDeleteTxId = null;
+let titoliSelectedDate = new Date();
 
-const supabaseClient = hasCredentials
+const supabaseClient = hasCredentials && window.supabase
   ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
   : null;
+
+async function loadNavbar() {
+  if (!navbarRoot) return;
+
+  try {
+    const response = await fetch("partials/navbar.html");
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+
+    navbarRoot.innerHTML = await response.text();
+    const normalizePage = (value) => {
+      const raw = String(value || "").split("/").pop() || "index.html";
+      return raw.replace(/\.html$/i, "") || "index";
+    };
+    const currentPage = normalizePage(window.location.pathname);
+
+    const navLinks = document.querySelectorAll("#navbar-root a[href]");
+
+    navLinks.forEach((link) => {
+      link.classList.remove("active");
+
+      const linkPage = normalizePage(link.getAttribute("href"));
+
+      if (linkPage === currentPage) {
+        link.classList.add("active");
+      }
+    });
+  } catch (error) {
+    console.error("Errore caricamento navbar:", error);
+  }
+}
 
 function setStatus(message, type) {
   statusElement.textContent = message;
@@ -976,6 +1011,16 @@ function getTitoliDossierOrder(dossier) {
   return Number.isFinite(order) ? order : Number.MAX_SAFE_INTEGER;
 }
 
+function getTitoliDossierImportEnabled(dossier) {
+  const value = getFirstDefined(dossier, ["import", "can_import", "excel_import"], false);
+  if (value === true || value === false) return value;
+  if (value === 1) return true;
+  if (value === 0) return false;
+
+  const text = String(value ?? "").trim().toLowerCase();
+  return ["true", "1", "yes", "y", "si", "s"].includes(text);
+}
+
 function isTitoliDossierActive(dossier) {
   const visible = getFirstDefined(dossier, ["visible"], true);
   const isClosed = getFirstDefined(dossier, ["is_closed"], false);
@@ -1057,25 +1102,47 @@ function parseTitoliValue(value) {
   const rawValue = String(value ?? "").trim();
 
   if (!rawValue) {
-    return 0;
+    return null;
   }
 
-  const compactValue = rawValue.replace(/\s/g, "");
+  let compactValue = rawValue
+    .replace(/\s/g, "")
+    .replace(/[€$£]/g, "")
+    .replace(/[^\d,.-]/g, "");
+
+  if (!compactValue || compactValue === "-" || compactValue === "." || compactValue === ",") {
+    return null;
+  }
+
   const hasComma = compactValue.includes(",");
   const hasDot = compactValue.includes(".");
-  let normalizedValue = compactValue;
 
-  if (hasComma) {
-    normalizedValue = compactValue.replace(/\./g, "").replace(",", ".");
+  if (hasComma && hasDot) {
+    const decimalSeparator = compactValue.lastIndexOf(",") > compactValue.lastIndexOf(".") ? "," : ".";
+    const thousandsSeparator = decimalSeparator === "," ? "." : ",";
+    compactValue = compactValue.replaceAll(thousandsSeparator, "").replace(decimalSeparator, ".");
+  } else if (hasComma) {
+    compactValue = normalizeTitoliSingleSeparatorNumber(compactValue, ",");
   } else if (hasDot) {
-    const parts = compactValue.split(".");
-    const lastPart = parts[parts.length - 1];
-    normalizedValue =
-      parts.length > 2 || lastPart.length === 3 ? parts.join("") : compactValue;
+    compactValue = normalizeTitoliSingleSeparatorNumber(compactValue, ".");
   }
 
-  const parsedValue = Number(normalizedValue);
-  return Number.isFinite(parsedValue) ? parsedValue : 0;
+  const parsedValue = Number(compactValue);
+  return Number.isFinite(parsedValue) ? parsedValue : null;
+}
+
+function normalizeTitoliSingleSeparatorNumber(value, separator) {
+  const parts = value.split(separator);
+
+  if (parts.length > 2 && parts.slice(1).every((part) => part.length === 3)) {
+    return parts.join("");
+  }
+
+  if (parts.length === 2) {
+    return separator === "," ? value.replace(",", ".") : value;
+  }
+
+  return value;
 }
 
 function formatTitoliValue(value) {
@@ -1100,7 +1167,95 @@ function formatTitoliMarketInput(input) {
     return;
   }
 
-  input.value = formatTitoliValue(amount);
+  input.value = amount === null ? "" : formatTitoliValue(amount);
+}
+
+function formatTitoliDateValue(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function getStartOfTitoliWeek(date) {
+  const weekStart = new Date(date);
+  const day = weekStart.getDay();
+  const mondayOffset = day === 0 ? -6 : 1 - day;
+  weekStart.setDate(weekStart.getDate() + mondayOffset);
+  weekStart.setHours(0, 0, 0, 0);
+  return weekStart;
+}
+
+function renderTitoliWeekPicker() {
+  if (!titoliWeekPicker || !titoliSnapshotDateInput) return;
+
+  const weekStart = getStartOfTitoliWeek(titoliSelectedDate);
+  const selectedValue = formatTitoliDateValue(titoliSelectedDate);
+
+  titoliSnapshotDateInput.value = selectedValue;
+  titoliWeekPicker.textContent = "";
+
+  const previousButton = document.createElement("button");
+  const nextButton = document.createElement("button");
+  const daysWrapper = document.createElement("div");
+
+  previousButton.className = "titoli-week-arrow";
+  previousButton.type = "button";
+  previousButton.textContent = "‹";
+  previousButton.setAttribute("aria-label", "Settimana precedente");
+
+  nextButton.className = "titoli-week-arrow";
+  nextButton.type = "button";
+  nextButton.textContent = "›";
+  nextButton.setAttribute("aria-label", "Settimana successiva");
+
+  daysWrapper.className = "titoli-week-days";
+
+  for (let index = 0; index < 7; index += 1) {
+    const dayDate = new Date(weekStart);
+    dayDate.setDate(weekStart.getDate() + index);
+
+    const dayButton = document.createElement("button");
+    const dayName = document.createElement("span");
+    const dayNumber = document.createElement("strong");
+    const dayMonth = document.createElement("span");
+    const value = formatTitoliDateValue(dayDate);
+
+    dayButton.className = "titoli-week-day";
+    dayButton.type = "button";
+    dayButton.dataset.date = value;
+    dayButton.setAttribute("aria-pressed", value === selectedValue ? "true" : "false");
+    dayButton.classList.toggle("is-selected", value === selectedValue);
+    dayName.textContent = dayDate.toLocaleDateString("it-IT", { weekday: "short" });
+    dayNumber.textContent = dayDate.toLocaleDateString("it-IT", { day: "2-digit" });
+    dayMonth.textContent = dayDate.toLocaleDateString("it-IT", { month: "short" });
+
+    dayButton.appendChild(dayName);
+    dayButton.appendChild(dayNumber);
+    dayButton.appendChild(dayMonth);
+    daysWrapper.appendChild(dayButton);
+  }
+
+  previousButton.addEventListener("click", () => {
+    titoliSelectedDate.setDate(titoliSelectedDate.getDate() - 7);
+    renderTitoliWeekPicker();
+  });
+
+  nextButton.addEventListener("click", () => {
+    titoliSelectedDate.setDate(titoliSelectedDate.getDate() + 7);
+    renderTitoliWeekPicker();
+  });
+
+  daysWrapper.addEventListener("click", (event) => {
+    const button = event.target.closest(".titoli-week-day");
+    if (!button) return;
+    titoliSelectedDate = new Date(`${button.dataset.date}T00:00:00`);
+    renderTitoliWeekPicker();
+  });
+
+  titoliWeekPicker.appendChild(previousButton);
+  titoliWeekPicker.appendChild(daysWrapper);
+  titoliWeekPicker.appendChild(nextButton);
 }
 
 function getTitoliSnapshotTime(snapshot) {
@@ -1135,6 +1290,27 @@ function buildLatestTitoliSnapshots(snapshots) {
   return { byDossierAsset, byDossierIsin };
 }
 
+function buildLatestTitoliSnapshotDates(snapshots) {
+  const latestDates = new Map();
+
+  snapshots.forEach((snapshot) => {
+    const dossierId = getTitoliSnapshotDossierId(snapshot);
+    const snapshotDate = getTitoliSnapshotDate(snapshot);
+    const timestamp = snapshotDate ? new Date(snapshotDate).getTime() : NaN;
+    if (!dossierId || !snapshotDate || !Number.isFinite(timestamp)) return;
+
+    const current = latestDates.get(dossierId);
+    if (!current || timestamp >= current.timestamp) {
+      latestDates.set(dossierId, {
+        formattedDate: new Date(snapshotDate).toLocaleDateString("it-IT"),
+        timestamp,
+      });
+    }
+  });
+
+  return latestDates;
+}
+
 function findLatestTitoliSnapshot(asset, dossierId, latestSnapshots) {
   const assetIsin = getTitoliAssetIsin(asset);
   const assetId = getTitoliAssetId(asset);
@@ -1146,10 +1322,10 @@ function findLatestTitoliSnapshot(asset, dossierId, latestSnapshots) {
   );
 }
 
-function updateTitoliDossierTotals(card) {
+function updateTotals(card) {
   const inputs = Array.from(card.querySelectorAll(".titoli-market-input"));
   const initialTotal = Number(card.dataset.initialTotal || 0);
-  const currentTotal = inputs.reduce((total, input) => total + parseTitoliValue(input.value), 0);
+  const currentTotal = inputs.reduce((total, input) => total + (parseTitoliValue(input.value) ?? 0), 0);
   const delta = currentTotal - initialTotal;
   const previousTotalElement = card.querySelector(".titoli-total-previous strong");
   const currentTotalElement = card.querySelector(".titoli-total-current strong");
@@ -1160,14 +1336,216 @@ function updateTitoliDossierTotals(card) {
   deltaElement.classList.remove("value-positive", "value-negative", "value-neutral");
 
   if (delta > 0) {
-    deltaElement.textContent = `▲ ${formatEuro(delta)}`;
+    deltaElement.textContent = `▲ (+${formatEuro(delta)})`;
     deltaElement.classList.add("value-positive");
   } else if (delta < 0) {
-    deltaElement.textContent = `▼ ${formatEuro(Math.abs(delta))}`;
+    deltaElement.textContent = `▼ (${formatEuro(delta)})`;
     deltaElement.classList.add("value-negative");
   } else {
-    deltaElement.textContent = formatEuro(0);
+    deltaElement.textContent = "";
     deltaElement.classList.add("value-neutral");
+  }
+}
+
+function updateTitoliDossierTotals(card) {
+  updateTotals(card);
+}
+
+function getTitoliSnapshotDateValue() {
+  return String(titoliSnapshotDateInput?.value || "").trim();
+}
+
+function roundMoney(value) {
+  return Math.round((Number(value) + Number.EPSILON) * 100) / 100;
+}
+
+function formatTitoliLastReadDate(snapshotDate) {
+  const date = new Date(`${snapshotDate}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleDateString("it-IT");
+}
+
+function setTitoliCardLastReadDate(card, snapshotDate) {
+  const title = card.querySelector(".titoli-dossier-header h2");
+  if (!title) return;
+
+  let dateElement = title.querySelector(".titoli-dossier-title-date");
+  if (!dateElement) {
+    dateElement = document.createElement("span");
+    dateElement.className = "titoli-dossier-title-date";
+    title.appendChild(dateElement);
+  }
+
+  const formattedDate = formatTitoliLastReadDate(snapshotDate);
+  dateElement.textContent = formattedDate ? ` (${formattedDate})` : "";
+}
+
+function buildTitoliPortfolioRowsForCard(card, snapshotDate) {
+  const dossierId = String(card?.dataset?.dossierId || "").trim().toUpperCase();
+  const rows = [];
+  let total = 0;
+
+  if (!snapshotDate || !dossierId) {
+    return { dossierId, rows, total };
+  }
+
+  card.querySelectorAll(".titoli-market-input").forEach((input) => {
+    const isin = String(input.dataset.assetIsin || "").trim().toUpperCase();
+    const assetName = String(input.dataset.assetName || "").trim();
+    const marketValue = parseTitoliValue(input.value);
+
+    if (!isin || marketValue === null) return;
+
+    const roundedMarketValue = roundMoney(marketValue);
+
+    rows.push({
+      snapshot_date: snapshotDate,
+      dossier_id: dossierId,
+      isin,
+      asset_name: assetName,
+      market_value: roundedMarketValue,
+      note: "",
+    });
+    total += roundedMarketValue;
+  });
+
+  return { dossierId, rows, total: roundMoney(total) };
+}
+
+function isMissingInvestmentConstraintError(error) {
+  const message = String(error?.message || "").toLowerCase();
+  return (
+    error?.code === "42P10" ||
+    message.includes("no unique") ||
+    message.includes("no exclusion constraint") ||
+    message.includes("on conflict")
+  );
+}
+
+async function saveInvestmentSnapshot(snapshotDate, dossierId, total) {
+  const roundedTotal = roundMoney(total);
+  const configs = [
+    { dossierColumn: "dossier_id", valueColumn: "value" },
+    { dossierColumn: "account_id", valueColumn: "value" },
+    { dossierColumn: "dossier_id", valueColumn: "total_value" },
+    { dossierColumn: "account_id", valueColumn: "total_value" },
+    { dossierColumn: "dossier_id", valueColumn: "market_value" },
+    { dossierColumn: "account_id", valueColumn: "market_value" },
+  ];
+  let lastError = null;
+
+  for (const config of configs) {
+    const payload = {
+      snapshot_date: snapshotDate,
+      [config.dossierColumn]: dossierId,
+      [config.valueColumn]: roundedTotal,
+    };
+    const conflictTarget = `snapshot_date,${config.dossierColumn}`;
+    const upsertResult = await supabaseClient
+      .from("investments_snapshots")
+      .upsert(payload, { onConflict: conflictTarget });
+
+    if (!upsertResult.error) {
+      console.log("esito investments_snapshots", "upsert", config);
+      return { method: "upsert", config };
+    }
+
+    lastError = upsertResult.error;
+
+    if (!isMissingInvestmentConstraintError(upsertResult.error)) {
+      continue;
+    }
+
+    const selectResult = await supabaseClient
+      .from("investments_snapshots")
+      .select("id")
+      .eq("snapshot_date", snapshotDate)
+      .eq(config.dossierColumn, dossierId)
+      .limit(1);
+
+    if (selectResult.error) {
+      lastError = selectResult.error;
+      continue;
+    }
+
+    const existingId = selectResult.data?.[0]?.id;
+    const writeResult = existingId
+      ? await supabaseClient.from("investments_snapshots").update(payload).eq("id", existingId)
+      : await supabaseClient.from("investments_snapshots").insert(payload);
+
+    if (!writeResult.error) {
+      console.log("esito investments_snapshots", existingId ? "update" : "insert", config);
+      return { method: existingId ? "update" : "insert", config };
+    }
+
+    lastError = writeResult.error;
+  }
+
+  throw lastError || new Error("Impossibile salvare investments_snapshots.");
+}
+
+async function saveTitoliDossier(card, button) {
+  const snapshotDate = getTitoliSnapshotDateValue();
+  const { dossierId, rows, total } = buildTitoliPortfolioRowsForCard(card, snapshotDate);
+
+  if (!snapshotDate) {
+    alert("Seleziona una data snapshot valida.");
+    return;
+  }
+
+  if (!dossierId) {
+    alert("Dossier non valido: dossier_id mancante.");
+    return;
+  }
+
+  if (!rows.length) {
+    alert("Nessun titolo valido da salvare per questo dossier.");
+    return;
+  }
+
+  console.log("saving dossier", dossierId);
+  console.log("numero righe portfolio inviate", rows.length);
+  console.log("totale dossier inviato", total);
+  console.log("totale dossier arrotondato inviato", roundMoney(total));
+
+  const originalText = button.textContent;
+  button.disabled = true;
+  button.textContent = "Salvataggio...";
+
+  try {
+    const portfolioResult = await supabaseClient.from("portfolio_snapshots").upsert(rows, {
+      onConflict: "snapshot_date,dossier_id,isin",
+    });
+
+    console.log("esito portfolio_snapshots", portfolioResult);
+
+    if (portfolioResult.error) {
+      throw portfolioResult.error;
+    }
+
+    const investmentResult = await saveInvestmentSnapshot(snapshotDate, dossierId, total);
+    console.log("esito investments_snapshots", investmentResult);
+
+    card.dataset.initialTotal = String(total);
+    updateTotals(card);
+    setTitoliCardLastReadDate(card, snapshotDate);
+
+    button.textContent = "Salvato";
+    window.setTimeout(() => {
+      button.textContent = originalText;
+      button.disabled = false;
+    }, 1200);
+  } catch (error) {
+    console.error("Errore salvataggio dossier titoli:", {
+      dossierId,
+      snapshotDate,
+      portfolioRows: rows,
+      total,
+      error,
+    });
+    button.textContent = originalText;
+    button.disabled = false;
+    alert(`Errore salvataggio dossier: ${error.message || error}`);
   }
 }
 
@@ -1175,22 +1553,16 @@ function createTitoliTotalsBar() {
   const totalsBar = document.createElement("div");
   const previousTotal = document.createElement("div");
   const currentTotal = document.createElement("div");
-  const previousLabel = document.createElement("span");
   const previousValue = document.createElement("strong");
-  const currentLabel = document.createElement("span");
   const currentValue = document.createElement("strong");
   const deltaValue = document.createElement("span");
 
   totalsBar.className = "titoli-totals-bar";
   previousTotal.className = "titoli-total-previous";
   currentTotal.className = "titoli-total-current";
-  previousLabel.textContent = "Totale caricato";
-  currentLabel.textContent = "Nuovo totale";
   deltaValue.className = "titoli-total-delta value-neutral";
 
-  previousTotal.appendChild(previousLabel);
   previousTotal.appendChild(previousValue);
-  currentTotal.appendChild(currentLabel);
   currentTotal.appendChild(currentValue);
   currentTotal.appendChild(deltaValue);
   totalsBar.appendChild(previousTotal);
@@ -1203,7 +1575,6 @@ function createTitoliAssetRow(asset, dossierId, latestSnapshot, card) {
   const assetRow = document.createElement("div");
   const assetInfo = document.createElement("div");
   const assetName = document.createElement("div");
-  const assetMeta = document.createElement("div");
   const marketInput = document.createElement("input");
   const assetId = getTitoliAssetId(asset);
   const assetLabel = getTitoliAssetName(asset);
@@ -1213,42 +1584,199 @@ function createTitoliAssetRow(asset, dossierId, latestSnapshot, card) {
   assetRow.className = "titoli-asset-row";
   assetInfo.className = "titoli-asset-info";
   assetName.className = "titoli-asset-name";
-  assetMeta.className = "titoli-asset-meta";
   marketInput.className = "titoli-market-input";
   marketInput.type = "text";
   marketInput.inputMode = "decimal";
   marketInput.placeholder = "0,00";
   marketInput.dataset.assetId = assetId;
   marketInput.dataset.assetName = assetLabel;
-  marketInput.dataset.assetIsin = assetIsin;
+  marketInput.dataset.assetIsin = assetIsin.trim().toUpperCase();
   marketInput.dataset.dossierId = dossierId;
   marketInput.setAttribute("aria-label", `Valore di mercato ${assetLabel}`);
 
-  if (latestSnapshot) {
+  if (latestSnapshot && latestValue !== null) {
     marketInput.value = formatTitoliValue(latestValue);
   }
 
-  marketInput.addEventListener("input", () => updateTitoliDossierTotals(card));
+  marketInput.addEventListener("input", () => updateTotals(card));
   marketInput.addEventListener("blur", () => {
     formatTitoliMarketInput(marketInput);
-    updateTitoliDossierTotals(card);
+    updateTotals(card);
   });
 
   assetName.textContent = assetLabel || "Titolo senza nome";
-  assetMeta.textContent = assetIsin ? `ISIN ${assetIsin}` : assetId ? `ID ${assetId}` : "Identificativo non disponibile";
 
   assetInfo.appendChild(assetName);
-  assetInfo.appendChild(assetMeta);
   assetRow.appendChild(assetInfo);
   assetRow.appendChild(marketInput);
 
-  return { initialValue: latestSnapshot ? latestValue : 0, row: assetRow };
+  return { initialValue: latestSnapshot ? latestValue ?? 0 : 0, row: assetRow };
+}
+
+function normalizeImportHeader(value) {
+  return String(value ?? "")
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ");
+}
+
+function findHeaderRow(rows) {
+  for (let index = 0; index < rows.length; index += 1) {
+    const cells = (rows[index] ?? []).map(normalizeImportHeader);
+    const isinIndex = cells.findIndex((cell) => cell === "isin" || cell.includes("isin"));
+    const valueIndex = cells.findIndex((cell) => cell === "valore di mercato" || cell.includes("valore di mercato"));
+
+    if (isinIndex >= 0 && valueIndex >= 0) {
+      return { headerIndex: index, isinIndex, valueIndex };
+    }
+  }
+
+  return null;
+}
+
+function handleImportFile(file, card) {
+  if (!window.XLSX) {
+    alert("Import Excel non disponibile: libreria XLSX non caricata.");
+    return;
+  }
+
+  const reader = new FileReader();
+
+  reader.addEventListener("load", (event) => {
+    try {
+      const data = new Uint8Array(event.target.result);
+      const workbook = window.XLSX.read(data, { type: "array" });
+      const firstSheetName = workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[firstSheetName];
+      const rows = window.XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: "" });
+      const headerInfo = findHeaderRow(rows);
+
+      if (!headerInfo) {
+        throw new Error("Header non trovato: servono colonne ISIN e Valore di mercato.");
+      }
+
+      const { headerIndex, isinIndex, valueIndex } = headerInfo;
+      const inputsByIsin = new Map();
+      let updatedCount = 0;
+
+      card.querySelectorAll(".titoli-market-input[data-asset-isin]").forEach((input) => {
+        const isin = String(input.dataset.assetIsin || "").trim().toUpperCase();
+        if (isin) inputsByIsin.set(isin, input);
+      });
+
+      for (let rowIndex = headerIndex + 1; rowIndex < rows.length; rowIndex += 1) {
+        const row = rows[rowIndex] ?? [];
+        const isin = String(row[isinIndex] ?? "").trim().toUpperCase();
+        if (!isin) continue;
+
+        const input = inputsByIsin.get(isin);
+        if (!input) continue;
+
+        const parsedValue = parseTitoliValue(row[valueIndex]);
+        if (parsedValue === null) continue;
+
+        input.value = formatTitoliValue(parsedValue);
+        updatedCount += 1;
+      }
+
+      updateTotals(card);
+
+      if (updatedCount === 0) {
+        alert("Import completato, ma nessun ISIN del file corrisponde ai titoli del dossier.");
+      }
+    } catch (error) {
+      alert(error.message || "Errore durante import Excel.");
+    }
+  });
+
+  reader.readAsArrayBuffer(file);
+}
+
+function bindImportButtons(rootElement) {
+  rootElement.querySelectorAll("[data-titoli-import-button]").forEach((button) => {
+    if (button.dataset.importBound === "true") return;
+    button.dataset.importBound = "true";
+
+    const card = button.closest(".titoli-dossier-card");
+    const fileInput = card?.querySelector("[data-titoli-import-input]");
+    if (!card || !fileInput) return;
+
+    button.addEventListener("click", () => fileInput.click());
+    fileInput.addEventListener("change", () => {
+      const file = fileInput.files?.[0];
+      if (!file) return;
+      handleImportFile(file, card);
+      fileInput.value = "";
+    });
+  });
+}
+
+function bindTitoliSavePlaceholders(rootElement) {
+  rootElement.querySelectorAll("[data-titoli-save-placeholder]").forEach((button) => {
+    if (button.dataset.saveBound === "true") return;
+    button.dataset.saveBound = "true";
+    button.addEventListener("click", () => {
+      if (button.dataset.titoliSavePlaceholder !== "all") {
+        const card = button.closest(".titoli-dossier-card");
+        if (card) {
+          saveTitoliDossier(card, button);
+          return;
+        }
+      }
+
+      alert("Salvataggio non ancora implementato");
+    });
+  });
+}
+
+function createTitoliDossierHeader(dossier, dossierIndex, latestSnapshotDates) {
+  const header = document.createElement("div");
+  const title = document.createElement("h2");
+  const actions = document.createElement("div");
+  const dossierId = getTitoliDossierId(dossier);
+  const latestDate = latestSnapshotDates.get(dossierId)?.formattedDate;
+
+  header.className = "titoli-dossier-header";
+  actions.className = "titoli-dossier-actions";
+  title.textContent = getTitoliDossierLabel(dossier);
+
+  if (latestDate) {
+    const dateElement = document.createElement("span");
+    dateElement.className = "titoli-dossier-title-date";
+    dateElement.textContent = ` (${latestDate})`;
+    title.appendChild(dateElement);
+  }
+
+  if (getTitoliDossierImportEnabled(dossier)) {
+    const importInput = document.createElement("input");
+    const importButton = document.createElement("button");
+
+    importInput.className = "titoli-import-input";
+    importInput.type = "file";
+    importInput.accept = ".xls,.xlsx";
+    importInput.dataset.titoliImportInput = String(dossierIndex);
+    importButton.className = "titoli-action-button titoli-import-button";
+    importButton.type = "button";
+    importButton.textContent = "Import";
+    importButton.dataset.titoliImportButton = String(dossierIndex);
+
+    actions.appendChild(importInput);
+    actions.appendChild(importButton);
+  }
+
+  header.appendChild(title);
+  header.appendChild(actions);
+
+  return header;
 }
 
 function renderTitoliInsertCards(dossiers, assets, snapshots) {
   const activeDossiers = dossiers.filter(isTitoliDossierActive).sort(sortTitoliDossiers);
   const activeAssets = assets.filter(isTitoliAssetActive).sort(sortTitoliAssets);
   const latestSnapshots = buildLatestTitoliSnapshots(snapshots);
+  const latestSnapshotDates = buildLatestTitoliSnapshotDates(snapshots);
   const assetsByDossier = new Map();
 
   activeAssets.forEach((asset) => {
@@ -1266,26 +1794,47 @@ function renderTitoliInsertCards(dossiers, assets, snapshots) {
     return;
   }
 
-  activeDossiers.forEach((dossier) => {
+  const mainLayout = document.createElement("div");
+  const leftColumn = document.createElement("div");
+  const rightColumn = document.createElement("div");
+  const bottomLayout = document.createElement("div");
+  const saveAllContainer = document.createElement("div");
+  const saveAllButton = document.createElement("button");
+
+  mainLayout.className = "titoli-main-layout";
+  leftColumn.className = "titoli-col-left";
+  rightColumn.className = "titoli-col-right";
+  bottomLayout.className = "titoli-bottom-layout";
+  saveAllContainer.className = "titoli-save-all-container";
+  saveAllButton.className = "titoli-action-button";
+  saveAllButton.type = "button";
+  saveAllButton.textContent = "Salva tutto";
+  saveAllButton.dataset.titoliSavePlaceholder = "all";
+
+  activeDossiers.forEach((dossier, dossierIndex) => {
     const dossierId = getTitoliDossierId(dossier);
     const dossierAssets = assetsByDossier.get(dossierId) ?? [];
     const card = document.createElement("article");
-    const header = document.createElement("div");
-    const title = document.createElement("h2");
-    const meta = document.createElement("p");
+    const body = document.createElement("div");
     const list = document.createElement("div");
     const totalsBar = createTitoliTotalsBar();
+    const saveRow = document.createElement("div");
+    const saveButton = document.createElement("button");
     let initialTotal = 0;
 
     card.className = "titoli-dossier-card";
-    header.className = "titoli-dossier-header";
+    card.dataset.dossierIndex = String(dossierIndex);
+    card.dataset.dossierId = dossierId;
+    body.className = "titoli-dossier-body";
+    body.classList.toggle("two-columns", dossierIndex === 0 || dossierIndex === 1);
     list.className = "titoli-assets-list";
-    title.textContent = getTitoliDossierLabel(dossier);
-    meta.textContent = `${dossierAssets.length} titoli attivi`;
+    saveRow.className = "titoli-save-row";
+    saveButton.className = "titoli-action-button";
+    saveButton.type = "button";
+    saveButton.textContent = "Salva";
+    saveButton.dataset.titoliSavePlaceholder = dossierId;
 
-    header.appendChild(title);
-    header.appendChild(meta);
-    card.appendChild(header);
+    card.appendChild(createTitoliDossierHeader(dossier, dossierIndex, latestSnapshotDates));
 
     if (dossierAssets.length) {
       dossierAssets.forEach((asset) => {
@@ -1302,11 +1851,31 @@ function renderTitoliInsertCards(dossiers, assets, snapshots) {
     }
 
     card.dataset.initialTotal = String(initialTotal);
-    card.appendChild(list);
-    card.appendChild(totalsBar);
-    titoliInsertRoot.appendChild(card);
-    updateTitoliDossierTotals(card);
+    body.appendChild(list);
+    body.appendChild(totalsBar);
+    saveRow.appendChild(saveButton);
+    body.appendChild(saveRow);
+    card.appendChild(body);
+
+    if (dossierIndex === 0) {
+      leftColumn.appendChild(card);
+    } else if (dossierIndex === 1) {
+      rightColumn.appendChild(card);
+    } else {
+      bottomLayout.appendChild(card);
+    }
+
+    updateTotals(card);
   });
+
+  rightColumn.appendChild(bottomLayout);
+  mainLayout.appendChild(leftColumn);
+  mainLayout.appendChild(rightColumn);
+  titoliInsertRoot.appendChild(mainLayout);
+  saveAllContainer.appendChild(saveAllButton);
+  titoliInsertRoot.appendChild(saveAllContainer);
+  bindImportButtons(titoliInsertRoot);
+  bindTitoliSavePlaceholders(titoliInsertRoot);
 }
 
 async function loadTitoliInsertReadOnly() {
@@ -1346,7 +1915,8 @@ async function loadTitoliInsertReadOnly() {
 }
 
 function initTitoliInsertPage() {
-  titoliSnapshotDateInput.value = new Date().toISOString().split("T")[0];
+  titoliSelectedDate = new Date();
+  renderTitoliWeekPicker();
   loadTitoliInsertReadOnly();
 }
 
@@ -1397,7 +1967,9 @@ if (loadButton && statusElement && outputElement) {
   loadButton.addEventListener("click", loadTransactions);
 }
 
-if (titoliInsertRoot && titoliSnapshotDateInput) {
+loadNavbar();
+
+if (titoliInsertRoot && titoliSnapshotDateInput && titoliWeekPicker) {
   initTitoliInsertPage();
 }
 
