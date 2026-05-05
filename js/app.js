@@ -71,6 +71,35 @@ const investmentsTo = document.getElementById("invTo");
 const investmentsApply = document.getElementById("invApply");
 const investmentsReset = document.getElementById("invReset");
 const investmentsToggle = document.getElementById("invToggle");
+const dossierPageRoot = document.getElementById("dossier-page");
+const dossierChartCanvas = document.getElementById("dossier-investments-chart");
+const dossierChartLegend = document.getElementById("dossier-chart-legend");
+const dossierChartStateElement = document.getElementById("dossier-chart-state");
+const dossierChartSubtitle = document.getElementById("dossier-chart-subtitle");
+const dossierChartRangeElement = document.getElementById("dossier-chart-range");
+const dossierChartPreset = document.getElementById("dossier-chart-preset");
+const dossierChartFromInput = document.getElementById("dossier-chart-from");
+const dossierChartToInput = document.getElementById("dossier-chart-to");
+const dossierChartApplyButton = document.getElementById("dossier-chart-apply");
+const dossierChartCancelButton = document.getElementById("dossier-chart-cancel");
+const dossierChartToggle = document.getElementById("dossier-chart-toggle");
+const dossierSeriesToggleButton = document.getElementById("dossier-series-toggle");
+const dossierSeriesPanel = document.getElementById("dossier-series-panel");
+const dossierSeriesSearchInput = document.getElementById("dossier-series-search");
+const dossierSeriesAllButton = document.getElementById("dossier-series-all");
+const dossierSeriesNoneButton = document.getElementById("dossier-series-none");
+const dossierSeriesList = document.getElementById("dossier-series-list");
+const dossierDetailPeriodSelect = document.getElementById("dossier-detail-period");
+const dossierDetailYearSelect = document.getElementById("dossier-detail-year");
+const dossierDetailMonthSelect = document.getElementById("dossier-detail-month");
+const dossierDetailDossierSelect = document.getElementById("dossier-detail-dossier");
+const dossierDetailStateElement = document.getElementById("dossier-detail-state");
+const dossierDetailTableBody = document.querySelector("#dossier-detail-table tbody");
+const dossierTotalsPeriodSelect = document.getElementById("dossier-totals-period");
+const dossierTotalsYearSelect = document.getElementById("dossier-totals-year");
+const dossierTotalsMonthSelect = document.getElementById("dossier-totals-month");
+const dossierTotalsStateElement = document.getElementById("dossier-totals-state");
+const dossierTotalsTableBody = document.querySelector("#dossier-totals-table tbody");
 const navbarRoot = document.getElementById("navbar-root");
 
 const hasCredentials =
@@ -104,6 +133,23 @@ let investmentsViewState = {
     end: "",
     preset: "all",
   },
+};
+let dossierPageState = {
+  dossiers: [],
+  snapshots: [],
+  basisEvents: [],
+};
+let dossierChart = null;
+let dossierChartState = {
+  mode: "month",
+  range: {
+    start: "",
+    end: "",
+    preset: "last3",
+  },
+  seriesVisibility: {},
+  seriesSearch: "",
+  seriesPanelOpen: false,
 };
 
 const supabaseClient = hasCredentials && window.supabase
@@ -405,6 +451,7 @@ class DashboardMiniLookerChart {
     yMax,
     xLabelWidth,
     yZeroLine,
+    legendFilter,
   }) {
     this.canvas = canvas;
     this.legendEl = legendEl;
@@ -437,6 +484,7 @@ class DashboardMiniLookerChart {
     this.yMinFloor = typeof yMinFloor === "number" ? yMinFloor : null;
     this.xLabelWidth = xLabelWidth || 70;
     this.yZeroLine = yZeroLine || null;
+    this.legendFilter = typeof legendFilter === "function" ? legendFilter : null;
     this.tooltip = this.ensureTooltip();
     this.ctx = canvas.getContext("2d");
     this.hoverIndex = null;
@@ -496,7 +544,9 @@ class DashboardMiniLookerChart {
     if (!this.legendEl) return;
 
     this.legendEl.innerHTML = "";
-    this.series.forEach((item) => {
+    this.series
+      .filter((item) => !this.legendFilter || this.legendFilter(item))
+      .forEach((item) => {
       const legendItem = document.createElement("div");
       legendItem.className = "legend-item";
       legendItem.innerHTML = `<span class="legend-dot" style="background:${item.color}"></span><span>${item.name}</span>`;
@@ -892,30 +942,47 @@ class DashboardMiniLookerChart {
     const index = this.labels.length === 1
       ? 0
       : Math.round(((x - this.pad.left) * (this.labels.length - 1)) / innerWidth);
-    const rows = this.getActiveSeries()
+    const activeSeries = this.getActiveSeries();
+    let tooltipContext = null;
+    let rows = activeSeries
       .map((item) => {
         const value = item.values[index];
         if (!Number.isFinite(value)) return null;
         return {
           name: item.name,
           value: this.yFormat(value),
+          rawValue: value,
           color: item.color,
+          series: item,
         };
       })
       .filter(Boolean);
+
+    if (this.tooltipMode === "nearestSeries" && rows.length > 1) {
+      const { min, max } = this.calcYRange();
+      const nearest = rows
+        .map((row) => ({
+          row,
+          distance: Math.abs(this.yAt(row.rawValue, min, max) - (event.clientY - rect.top)),
+        }))
+        .sort((first, second) => first.distance - second.distance)[0]?.row;
+
+      rows = nearest ? [nearest] : [];
+    }
 
     if (!rows.length) {
       this.handleLeave();
       return;
     }
 
+    tooltipContext = { series: rows[0]?.series || null };
     this.hoverIndex = index;
     this.draw();
-    this.renderTooltip(event, index, rows);
+    this.renderTooltip(event, index, rows, tooltipContext);
   }
 
-  renderTooltip(event, index, rows) {
-    const extra = typeof this.tooltipExtra === "function" ? this.tooltipExtra(index) : "";
+  renderTooltip(event, index, rows, tooltipContext = null) {
+    const extra = typeof this.tooltipExtra === "function" ? this.tooltipExtra(index, tooltipContext) : "";
     let extraHtml = "";
     if (Array.isArray(extra)) {
       extraHtml = extra
@@ -4383,6 +4450,1468 @@ function initTitoliInsertPage() {
   loadTitoliInsertReadOnly();
 }
 
+function initDossierPage() {
+  console.log("[Dossier] UI pronta");
+  loadDossierChartPreferences();
+  initDossierChartControls();
+  initDossierDetailControls();
+  initDossierTotalsControls();
+  fetchDossierBaseData();
+}
+
+function initDossierChartControls() {
+  if (dossierChartPreset) {
+    dossierChartPreset.addEventListener("change", () => {
+      applyDossierChartPreset(dossierChartPreset.value || "last3");
+      persistDossierChartPreferences();
+      refreshDossierChart();
+    });
+  }
+
+  if (dossierChartApplyButton) {
+    dossierChartApplyButton.addEventListener("click", () => {
+      const start = String(dossierChartFromInput?.value || "").trim();
+      const end = String(dossierChartToInput?.value || "").trim();
+
+      if (!isValidDossierChartPeriod(start) || !isValidDossierChartPeriod(end)) {
+        console.warn("[Dossier][chart range] Range custom non valido:", { start, end });
+        return;
+      }
+
+      if (start > end) {
+        console.warn("[Dossier][chart range] Range custom non applicato: Da maggiore di A", { start, end });
+        return;
+      }
+
+      setDossierChartRange(start, end, "custom");
+      persistDossierChartPreferences();
+      refreshDossierChart();
+    });
+  }
+
+  if (dossierChartCancelButton) {
+    dossierChartCancelButton.addEventListener("click", syncDossierChartRangeInputs);
+  }
+
+  if (dossierChartToggle) {
+    dossierChartToggle.addEventListener("click", (event) => {
+      const button = event.target.closest("[data-dossier-mode]");
+      if (!button) return;
+
+      dossierChartState.mode = button.dataset.dossierMode === "year" ? "year" : "month";
+      syncDossierChartControls();
+      persistDossierChartPreferences();
+      refreshDossierChart();
+    });
+  }
+
+  if (dossierSeriesToggleButton) {
+    dossierSeriesToggleButton.addEventListener("click", (event) => {
+      event.stopPropagation();
+      setDossierSeriesPanelOpen(!dossierChartState.seriesPanelOpen);
+    });
+  }
+
+  if (dossierSeriesSearchInput) {
+    dossierSeriesSearchInput.addEventListener("input", () => {
+      dossierChartState.seriesSearch = String(dossierSeriesSearchInput.value || "").trim().toLowerCase();
+      renderDossierSeriesList();
+    });
+  }
+
+  if (dossierSeriesAllButton) {
+    dossierSeriesAllButton.addEventListener("click", () => {
+      getDossierChartCatalog().forEach((item) => {
+        dossierChartState.seriesVisibility[item.id] = true;
+      });
+      persistDossierChartPreferences();
+      renderDossierSeriesList();
+      refreshDossierChart();
+    });
+  }
+
+  if (dossierSeriesNoneButton) {
+    dossierSeriesNoneButton.addEventListener("click", () => {
+      getDossierChartCatalog().forEach((item) => {
+        dossierChartState.seriesVisibility[item.id] = false;
+      });
+      persistDossierChartPreferences();
+      renderDossierSeriesList();
+      refreshDossierChart();
+    });
+  }
+
+  if (dossierSeriesList) {
+    dossierSeriesList.addEventListener("click", (event) => {
+      const soloButton = event.target.closest("[data-dossier-series-solo]");
+      if (soloButton) {
+        const soloId = String(soloButton.dataset.dossierSeriesSolo || "");
+        if (!soloId) return;
+
+        getDossierChartCatalog().forEach((item) => {
+          dossierChartState.seriesVisibility[item.id] = item.id === soloId;
+        });
+        persistDossierChartPreferences();
+        renderDossierSeriesList();
+        refreshDossierChart();
+        return;
+      }
+    });
+
+    dossierSeriesList.addEventListener("change", (event) => {
+      const checkbox = event.target.closest("[data-dossier-series-check]");
+      if (!checkbox) return;
+
+      const id = String(checkbox.dataset.dossierSeriesCheck || "");
+      if (!id) return;
+
+      dossierChartState.seriesVisibility[id] = checkbox.checked;
+      persistDossierChartPreferences();
+      updateDossierSeriesButton();
+      renderDossierSeriesList();
+      refreshDossierChart();
+    });
+  }
+
+  document.addEventListener("click", (event) => {
+    if (!dossierChartState.seriesPanelOpen || !dossierSeriesPanel || !dossierSeriesToggleButton) return;
+    const target = event.target;
+    if (dossierSeriesPanel.contains(target) || dossierSeriesToggleButton.contains(target)) return;
+    setDossierSeriesPanelOpen(false);
+  });
+
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && dossierChartState.seriesPanelOpen) {
+      setDossierSeriesPanelOpen(false);
+    }
+  });
+
+  setDossierSeriesPanelOpen(false);
+}
+
+function initDossierDetailControls() {
+  [
+    dossierDetailPeriodSelect,
+    dossierDetailYearSelect,
+    dossierDetailMonthSelect,
+    dossierDetailDossierSelect,
+  ].forEach((control) => {
+    if (!control) return;
+    control.addEventListener("change", renderDossierDetailTable);
+  });
+}
+
+function initDossierTotalsControls() {
+  [
+    dossierTotalsPeriodSelect,
+    dossierTotalsYearSelect,
+    dossierTotalsMonthSelect,
+  ].forEach((control) => {
+    if (!control) return;
+    control.addEventListener("change", renderDossierTotalsTable);
+  });
+}
+
+function populateDossierSelect() {
+  if (!dossierDetailDossierSelect) return;
+
+  const visibleDossiers = (dossierPageState.dossiers || [])
+    .filter((dossier) => dossier.visible !== false)
+    .slice()
+    .sort((first, second) => {
+      const firstOrder = Number(first.order);
+      const secondOrder = Number(second.order);
+      const orderDiff = (Number.isFinite(firstOrder) ? firstOrder : Number.MAX_SAFE_INTEGER) -
+        (Number.isFinite(secondOrder) ? secondOrder : Number.MAX_SAFE_INTEGER);
+
+      if (orderDiff !== 0) return orderDiff;
+      return String(first.label || "").localeCompare(String(second.label || ""), "it");
+    });
+
+  dossierDetailDossierSelect.textContent = "";
+
+  visibleDossiers.forEach((dossier) => {
+    const option = document.createElement("option");
+    const label = String(dossier.label || dossier.account_id || "").trim();
+
+    option.value = String(dossier.account_id || "");
+    option.textContent = dossier.is_closed === true ? `${label} (CHIUSO)` : label;
+    dossierDetailDossierSelect.appendChild(option);
+  });
+
+  console.log("[Dossier] dossier visibili caricati:", visibleDossiers);
+}
+
+function getDossierSnapshotYears() {
+  const years = new Set();
+
+  (dossierPageState.snapshots || []).forEach((snapshot) => {
+    const year = String(snapshot.snapshot_date || "").slice(0, 4);
+    if (/^\d{4}$/.test(year)) years.add(year);
+  });
+
+  return Array.from(years).sort((first, second) => Number(second) - Number(first));
+}
+
+function getDossierDefaultMonth(year) {
+  const months = new Set();
+
+  (dossierPageState.snapshots || []).forEach((snapshot) => {
+    const date = String(snapshot.snapshot_date || "");
+    if (date.slice(0, 4) !== String(year)) return;
+
+    const month = date.slice(5, 7);
+    if (/^\d{2}$/.test(month)) months.add(month);
+  });
+
+  return Array.from(months).sort().at(-1) || "";
+}
+
+function populateDossierYearSelect(selectElement, years, defaultYear) {
+  if (!selectElement) return;
+
+  selectElement.textContent = "";
+
+  years.forEach((year) => {
+    const option = document.createElement("option");
+    option.value = year;
+    option.textContent = year;
+    selectElement.appendChild(option);
+  });
+
+  if (defaultYear) selectElement.value = defaultYear;
+}
+
+function populateDossierMonthSelect(selectElement, defaultMonth) {
+  if (!selectElement) return;
+
+  const monthLabels = [
+    "Gennaio",
+    "Febbraio",
+    "Marzo",
+    "Aprile",
+    "Maggio",
+    "Giugno",
+    "Luglio",
+    "Agosto",
+    "Settembre",
+    "Ottobre",
+    "Novembre",
+    "Dicembre",
+  ];
+
+  selectElement.textContent = "";
+
+  monthLabels.forEach((label, index) => {
+    const option = document.createElement("option");
+    option.value = String(index + 1).padStart(2, "0");
+    option.textContent = label;
+    selectElement.appendChild(option);
+  });
+
+  if (defaultMonth) selectElement.value = defaultMonth;
+}
+
+function populateDossierControls() {
+  populateDossierSelect();
+
+  const years = getDossierSnapshotYears();
+  const defaultYear = years[0] || "";
+  const defaultMonth = defaultYear ? getDossierDefaultMonth(defaultYear) : "";
+
+  populateDossierYearSelect(dossierDetailYearSelect, years, defaultYear);
+  populateDossierYearSelect(dossierTotalsYearSelect, years, defaultYear);
+  populateDossierMonthSelect(dossierDetailMonthSelect, defaultMonth);
+  populateDossierMonthSelect(dossierTotalsMonthSelect, defaultMonth);
+
+  console.log("[Dossier] anni trovati:", years);
+  console.log("[Dossier] mese default scelto:", defaultMonth || "—");
+}
+
+function loadDossierChartPreferences() {
+  try {
+    const mode = localStorage.getItem("dossier_chart_mode");
+    if (mode === "month" || mode === "year") dossierChartState.mode = mode;
+
+    const rangeRaw = localStorage.getItem("dossier_chart_range");
+    if (rangeRaw) {
+      const parsed = JSON.parse(rangeRaw);
+      if (parsed?.from && parsed?.to) {
+        dossierChartState.range = {
+          start: parsed.from,
+          end: parsed.to,
+          preset: parsed.preset || "last3",
+        };
+      }
+    }
+
+    const customRangeRaw = localStorage.getItem("dossier_chart_custom_range");
+    if (!rangeRaw && customRangeRaw) {
+      const parsed = JSON.parse(customRangeRaw);
+      if (parsed?.from && parsed?.to) {
+        dossierChartState.range = {
+          start: parsed.from,
+          end: parsed.to,
+          preset: "custom",
+        };
+      }
+    }
+
+    const seriesRaw = localStorage.getItem("dossier_chart_series_visibility");
+    if (seriesRaw) {
+      const parsed = JSON.parse(seriesRaw);
+      if (parsed && typeof parsed === "object") {
+        dossierChartState.seriesVisibility = parsed;
+      }
+    }
+  } catch (error) {
+    console.warn("[Dossier] Impossibile leggere preferenze grafico:", error);
+  }
+}
+
+function persistDossierChartPreferences() {
+  try {
+    localStorage.setItem("dossier_chart_mode", dossierChartState.mode || "month");
+    localStorage.setItem("dossier_chart_range", JSON.stringify({
+      from: dossierChartState.range?.start || "",
+      to: dossierChartState.range?.end || "",
+      preset: dossierChartState.range?.preset || "last3",
+    }));
+    if (dossierChartState.range?.preset === "custom") {
+      localStorage.setItem("dossier_chart_custom_range", JSON.stringify({
+        from: dossierChartState.range?.start || "",
+        to: dossierChartState.range?.end || "",
+      }));
+    }
+    localStorage.setItem("dossier_chart_series_visibility", JSON.stringify(dossierChartState.seriesVisibility || {}));
+  } catch (error) {
+    console.warn("[Dossier] Impossibile salvare preferenze grafico:", error);
+  }
+}
+
+function setDossierChartState(message, type = "info") {
+  if (!dossierChartStateElement) return;
+
+  dossierChartStateElement.textContent = message || "";
+  dossierChartStateElement.className = `dashboard-chart-state ${message ? "is-visible" : ""} ${type ? `is-${type}` : ""}`;
+}
+
+function getDossierChartCatalog() {
+  return (dossierPageState.dossiers || [])
+    .filter((dossier) => dossier.visible !== false)
+    .map((dossier) => ({
+      id: String(dossier.account_id || "").trim().toUpperCase(),
+      name: String(dossier.label || dossier.account_id || "").trim(),
+      isClosed: dossier.is_closed === true,
+      order: Number.isFinite(Number(dossier.order)) ? Number(dossier.order) : 999,
+    }))
+    .filter((item) => item.id)
+    .sort((first, second) => {
+      const closedDiff = Number(first.isClosed) - Number(second.isClosed);
+      if (closedDiff !== 0) return closedDiff;
+      const orderDiff = first.order - second.order;
+      if (orderDiff !== 0) return orderDiff;
+      return first.name.localeCompare(second.name, "it");
+    });
+}
+
+function syncDossierChartSeriesVisibility() {
+  const catalog = getDossierChartCatalog();
+  const knownIds = new Set(catalog.map((item) => item.id));
+
+  catalog.forEach((item) => {
+    if (typeof dossierChartState.seriesVisibility[item.id] !== "boolean") {
+      dossierChartState.seriesVisibility[item.id] = true;
+    }
+  });
+
+  Object.keys(dossierChartState.seriesVisibility || {}).forEach((id) => {
+    if (!knownIds.has(id)) delete dossierChartState.seriesVisibility[id];
+  });
+}
+
+function getVisibleDossierChartSeriesIds() {
+  return getDossierChartCatalog()
+    .filter((item) => dossierChartState.seriesVisibility[item.id] !== false)
+    .map((item) => item.id);
+}
+
+function updateDossierSeriesButton() {
+  if (!dossierSeriesToggleButton) return;
+
+  const count = getVisibleDossierChartSeriesIds().length;
+  dossierSeriesToggleButton.textContent = `Serie (${count})`;
+}
+
+function setDossierSeriesPanelOpen(isOpen) {
+  dossierChartState.seriesPanelOpen = Boolean(isOpen);
+
+  if (dossierSeriesPanel) {
+    dossierSeriesPanel.classList.toggle("is-hidden", !dossierChartState.seriesPanelOpen);
+    dossierSeriesPanel.classList.toggle("is-open", dossierChartState.seriesPanelOpen);
+    dossierSeriesPanel.setAttribute("aria-hidden", dossierChartState.seriesPanelOpen ? "false" : "true");
+  }
+
+  if (dossierSeriesToggleButton) {
+    dossierSeriesToggleButton.classList.toggle("is-active", dossierChartState.seriesPanelOpen);
+    dossierSeriesToggleButton.setAttribute("aria-expanded", dossierChartState.seriesPanelOpen ? "true" : "false");
+  }
+}
+
+function renderDossierSeriesList() {
+  if (!dossierSeriesList) return;
+
+  updateDossierSeriesButton();
+
+  const query = String(dossierChartState.seriesSearch || "").trim().toLowerCase();
+  const catalog = getDossierChartCatalog().filter((item) => {
+    if (!query) return true;
+    return item.name.toLowerCase().includes(query) || item.id.toLowerCase().includes(query);
+  });
+
+  dossierSeriesList.textContent = "";
+
+  if (!catalog.length) {
+    const empty = document.createElement("div");
+    empty.className = "dossier-series-empty";
+    empty.textContent = "Nessuna serie trovata.";
+    dossierSeriesList.appendChild(empty);
+    return;
+  }
+
+  catalog.forEach((item) => {
+    const row = document.createElement("div");
+    const label = document.createElement("label");
+    const input = document.createElement("input");
+    const name = document.createElement("span");
+    const soloButton = document.createElement("button");
+
+    row.className = "dossier-series-row";
+    row.classList.toggle("is-closed", item.isClosed);
+    label.className = "dossier-series-option";
+    input.type = "checkbox";
+    input.checked = dossierChartState.seriesVisibility[item.id] !== false;
+    input.dataset.dossierSeriesCheck = item.id;
+    name.className = "dossier-series-name";
+    name.textContent = item.isClosed ? `${item.name} (CHIUSO)` : item.name;
+    soloButton.type = "button";
+    soloButton.className = "dossier-series-solo";
+    soloButton.dataset.dossierSeriesSolo = item.id;
+    soloButton.textContent = "Solo";
+
+    label.appendChild(input);
+    label.appendChild(name);
+    row.appendChild(label);
+    row.appendChild(soloButton);
+    dossierSeriesList.appendChild(row);
+  });
+}
+
+function syncDossierChartControls() {
+  if (dossierChartPreset) dossierChartPreset.value = dossierChartState.range.preset || "last3";
+  if (dossierChartToggle) {
+    dossierChartToggle.querySelectorAll("[data-dossier-mode]").forEach((button) => {
+      button.classList.toggle("is-active", button.dataset.dossierMode === dossierChartState.mode);
+    });
+  }
+  if (dossierSeriesSearchInput) dossierSeriesSearchInput.value = dossierChartState.seriesSearch || "";
+  syncDossierChartRangeInputs();
+}
+
+function getDossierChartBounds() {
+  const periods = (dossierPageState.snapshots || [])
+    .map((snapshot) => parseDossierSnapshotDate(snapshot.snapshot_date).slice(0, 7))
+    .filter(Boolean)
+    .sort();
+
+  if (!periods.length) return null;
+  return {
+    min: periods[0],
+    max: periods[periods.length - 1],
+  };
+}
+
+function applyDossierChartPreset(preset = "last3") {
+  const bounds = getDossierChartBounds();
+  if (!bounds) return;
+
+  let start = bounds.min;
+  let end = bounds.max;
+  const today = new Date();
+  const currentPeriod = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}`;
+
+  if (preset === "last3") {
+    start = shiftDashboardPeriod(currentPeriod, -2);
+    end = currentPeriod;
+  } else if (preset === "last6") {
+    start = shiftDashboardPeriod(currentPeriod, -5);
+    end = currentPeriod;
+  } else if (preset === "last12") {
+    start = shiftDashboardPeriod(currentPeriod, -11);
+    end = currentPeriod;
+  }
+
+  setDossierChartRange(start, end, preset);
+}
+
+function isValidDossierChartPeriod(period) {
+  return /^\d{4}-\d{2}$/.test(String(period || ""));
+}
+
+function setDossierChartRange(start, end, preset = "custom") {
+  const normalizedStart = String(start || "").trim();
+  const normalizedEnd = String(end || "").trim();
+
+  if (!normalizedStart || !normalizedEnd) return;
+
+  dossierChartState.range = {
+    start: normalizedStart,
+    end: normalizedEnd,
+    preset: preset || "custom",
+  };
+  syncDossierChartControls();
+}
+
+function syncDossierChartRangeInputs() {
+  if (dossierChartFromInput) dossierChartFromInput.value = dossierChartState.range?.start || "";
+  if (dossierChartToInput) dossierChartToInput.value = dossierChartState.range?.end || "";
+}
+
+function normalizeDossierChartPointDate(value) {
+  return parseDossierSnapshotDate(value);
+}
+
+function buildDossierChartGlobalLabels(accountIds) {
+  const allowedAccounts = new Set(accountIds);
+  const labels = new Set();
+
+  (dossierPageState.snapshots || []).forEach((snapshot) => {
+    const accountId = String(snapshot.account_id || "").trim().toUpperCase();
+    const snapshotDate = normalizeDossierChartPointDate(snapshot.snapshot_date);
+    if (allowedAccounts.has(accountId) && snapshotDate) labels.add(snapshotDate);
+  });
+
+  return Array.from(labels).sort((first, second) => first.localeCompare(second));
+}
+
+function buildDossierChartPointsForAccount(accountId, globalLabels) {
+  const normalizedAccountId = String(accountId || "").trim().toUpperCase();
+  const valueByDate = {};
+  const basisList = [];
+
+  (dossierPageState.snapshots || []).forEach((snapshot) => {
+    const snapshotAccountId = String(snapshot.account_id || "").trim().toUpperCase();
+    const snapshotDate = normalizeDossierChartPointDate(snapshot.snapshot_date);
+    const value = Number(snapshot.value);
+    if (snapshotAccountId !== normalizedAccountId || !snapshotDate || !Number.isFinite(value)) return;
+    valueByDate[snapshotDate] = (valueByDate[snapshotDate] || 0) + value;
+  });
+
+  (dossierPageState.basisEvents || []).forEach((event) => {
+    const eventAccountId = String(event.account_id || "").trim().toUpperCase();
+    const effectiveDate = normalizeDossierChartPointDate(event.effective_date);
+    const costBasis = Number(event.cost_basis);
+    if (eventAccountId !== normalizedAccountId || !effectiveDate || !Number.isFinite(costBasis)) return;
+    basisList.push({ effectiveDate, costBasis });
+  });
+
+  basisList.sort((first, second) => first.effectiveDate.localeCompare(second.effectiveDate));
+
+  let basisIndex = 0;
+  let latestBasis = null;
+  const capitalChangeDates = new Set(basisList.map((item) => item.effectiveDate));
+
+  return (globalLabels || []).map((dateIso) => {
+    while (basisIndex < basisList.length && basisList[basisIndex].effectiveDate <= dateIso) {
+      latestBasis = basisList[basisIndex].costBasis;
+      basisIndex += 1;
+    }
+
+    const totalValue = Object.prototype.hasOwnProperty.call(valueByDate, dateIso) ? valueByDate[dateIso] : null;
+    const totalCostBasis = Number.isFinite(latestBasis) ? latestBasis : null;
+    const value = totalValue !== null && totalCostBasis !== null && totalCostBasis !== 0
+      ? ((totalValue - totalCostBasis) / totalCostBasis) * 100
+      : null;
+    const previousBasis = getPreviousDossierChartBasis(basisList, dateIso);
+    const capitalDelta = totalCostBasis !== null
+      ? totalCostBasis - (Number.isFinite(previousBasis) ? previousBasis : 0)
+      : 0;
+
+    return {
+      dateIso,
+      period: dateIso.slice(0, 7),
+      value,
+      totalValue,
+      totalCostBasis,
+      isCapitalChange: capitalChangeDates.has(dateIso),
+      capitalDelta,
+    };
+  });
+}
+
+function getPreviousDossierChartBasis(basisList, dateIso) {
+  let previous = NaN;
+
+  (basisList || []).forEach((item) => {
+    if (item.effectiveDate < dateIso) previous = item.costBasis;
+  });
+
+  return previous;
+}
+
+function buildDossierYearlyChartPoints(points) {
+  const byYear = new Map();
+
+  (points || []).forEach((point) => {
+    const period = String(point.period || "");
+    const year = Number(period.slice(0, 4));
+    const month = Number(period.slice(5, 7));
+    if (!Number.isFinite(year) || !Number.isFinite(month)) return;
+
+    const existing = byYear.get(year);
+    if (!existing || (month === 12 && existing.month !== 12) || (existing.month !== 12 && month > existing.month)) {
+      byYear.set(year, { ...point, year, month });
+    }
+  });
+
+  return Array.from(byYear.values()).sort((first, second) => first.year - second.year);
+}
+
+function filterDossierChartPoints(points) {
+  const { start, end } = dossierChartState.range;
+  return (points || []).filter((point) => {
+    const period = String(point.period || "");
+    return period && (!start || period >= start) && (!end || period <= end);
+  });
+}
+
+function computeDossierChartRange(values) {
+  const finiteValues = (values || []).filter((value) => Number.isFinite(value));
+  if (!finiteValues.length) return null;
+
+  const minValue = Math.min(...finiteValues);
+  const maxValue = Math.max(...finiteValues);
+  const range = maxValue - minValue;
+  const pad = range === 0 ? 1 : range * 0.1;
+  let yMin = minValue - pad;
+  let yMax = maxValue + pad;
+
+  if (minValue > -5) yMin = Math.max(yMin, minValue - 2);
+  if (yMax <= yMin) yMax = yMin + 1;
+
+  const rawStep = (yMax - yMin) / 6;
+  const exp = 10 ** Math.floor(Math.log10(rawStep || 1));
+  const frac = rawStep / exp;
+  const niceFrac = frac <= 1 ? 1 : frac <= 2 ? 2 : frac <= 5 ? 5 : 10;
+  const step = niceFrac * exp;
+
+  yMin = Math.floor(yMin / step) * step;
+  yMax = Math.ceil(yMax / step) * step;
+  if (yMax <= yMin) yMax = yMin + step;
+
+  return { min: yMin, max: yMax, step };
+}
+
+function setDossierChartMeta(labels) {
+  if (!labels.length) {
+    if (dossierChartRangeElement) dossierChartRangeElement.textContent = "—";
+    if (dossierChartSubtitle) dossierChartSubtitle.textContent = "—";
+    return;
+  }
+
+  const first = labels[0];
+  const last = labels[labels.length - 1];
+
+  if (dossierChartState.mode === "year") {
+    if (dossierChartRangeElement) dossierChartRangeElement.textContent = `${first} → ${last} · ${labels.length} punti`;
+    if (dossierChartSubtitle) dossierChartSubtitle.textContent = `${first} → ${last} · Anno`;
+    return;
+  }
+
+  if (dossierChartRangeElement) {
+    dossierChartRangeElement.textContent = `${formatDashboardChartMonth(first.slice(0, 7))} → ${formatDashboardChartMonth(last.slice(0, 7))} · ${labels.length} punti`;
+  }
+  if (dossierChartSubtitle) {
+    dossierChartSubtitle.textContent = `${formatDashboardChartMonthYear(first.slice(0, 7))} → ${formatDashboardChartMonthYear(last.slice(0, 7))} · Mese`;
+  }
+}
+
+function clearDossierChart() {
+  if (dossierChart) {
+    dossierChart.destroy();
+    dossierChart = null;
+  }
+
+  if (dossierChartLegend) dossierChartLegend.innerHTML = "";
+  if (dossierChartCanvas) {
+    const context = dossierChartCanvas.getContext("2d");
+    if (context) context.clearRect(0, 0, dossierChartCanvas.width, dossierChartCanvas.height);
+  }
+}
+
+function initializeDossierChartData() {
+  syncDossierChartSeriesVisibility();
+  renderDossierSeriesList();
+  if (!dossierChartState.range.start || !dossierChartState.range.end) {
+    applyDossierChartPreset(dossierChartState.range.preset || "last3");
+  } else {
+    syncDossierChartControls();
+  }
+  refreshDossierChart();
+}
+
+function refreshDossierChart() {
+  if (!dossierChartCanvas) return;
+
+  const catalog = getDossierChartCatalog();
+  const accountIds = catalog.map((item) => item.id);
+
+  if (!accountIds.length) {
+    setDossierChartState("Nessuna serie disponibile.", "empty");
+    clearDossierChart();
+    return;
+  }
+
+  const globalLabels = buildDossierChartGlobalLabels(accountIds);
+  const visibleIds = new Set(getVisibleDossierChartSeriesIds());
+  const seriesPointsById = {};
+
+  catalog.forEach((item) => {
+    seriesPointsById[item.id] = filterDossierChartPoints(buildDossierChartPointsForAccount(item.id, globalLabels));
+  });
+
+  const visibleCatalog = catalog.filter((item) => visibleIds.has(item.id));
+
+  if (!visibleCatalog.length) {
+    setDossierChartState("Nessuna serie selezionata.", "empty");
+    setDossierChartMeta([]);
+    clearDossierChart();
+    return;
+  }
+
+  const labelsSet = new Set();
+  visibleCatalog.forEach((item) => {
+    const points = dossierChartState.mode === "year"
+      ? buildDossierYearlyChartPoints(seriesPointsById[item.id])
+      : seriesPointsById[item.id];
+    points.forEach((point) => {
+      if (Number.isFinite(point.value)) labelsSet.add(dossierChartState.mode === "year" ? String(point.year) : point.dateIso);
+    });
+  });
+
+  const labels = Array.from(labelsSet).sort((first, second) => first.localeCompare(second));
+
+  if (!labels.length) {
+    setDossierChartState("Nessun dato disponibile per il periodo selezionato.", "empty");
+    setDossierChartMeta([]);
+    clearDossierChart();
+    return;
+  }
+
+  const tooltipMetaById = {};
+  const palette = ["#4F7DF3", "#2FA36B", "#E38B2C", "#7C3AED", "#DC2626", "#0F766E", "#9333EA"];
+  const chartSeries = visibleCatalog.map((item, index) => {
+    const points = dossierChartState.mode === "year"
+      ? buildDossierYearlyChartPoints(seriesPointsById[item.id])
+      : seriesPointsById[item.id];
+    const byLabel = new Map(points.map((point) => [dossierChartState.mode === "year" ? String(point.year) : point.dateIso, point]));
+    const values = labels.map((label) => {
+      const point = byLabel.get(label);
+      return point && Number.isFinite(point.value) ? point.value : null;
+    });
+    const markers = labels.map((label) => byLabel.get(label)?.isCapitalChange === true);
+
+    tooltipMetaById[item.id] = labels.map((label) => byLabel.get(label) || null);
+
+    return {
+      key: item.id,
+      name: item.name || item.id,
+      isClosed: item.isClosed === true,
+      values,
+      color: palette[index % palette.length],
+      fillColor: "transparent",
+      lineWidth: 2,
+      spanGaps: false,
+      pointColors: markers.map((marker) => marker ? "#E38B2C" : null),
+      pointRadii: markers.map((marker) => marker ? 4 : 0),
+    };
+  });
+
+  const allValues = chartSeries.flatMap((series) => series.values).filter((value) => Number.isFinite(value));
+  const yRange = computeDossierChartRange(allValues);
+  const singleSeries = chartSeries.length === 1;
+
+  setDossierChartState("");
+  setDossierChartMeta(labels);
+  clearDossierChart();
+
+  dossierChart = new DashboardMiniLookerChart({
+    canvas: dossierChartCanvas,
+    legendEl: dossierChartLegend,
+    labels,
+    series: chartSeries.map((series) => ({
+      ...series,
+      fillColor: singleSeries ? "rgba(79,125,243,0.18)" : "transparent",
+    })),
+    yFormat: formatDashboardPctValue,
+    yAxisFormat: formatDashboardPctAxis,
+    yTickStep: yRange?.step || null,
+    yTickMax: 6,
+    yMin: yRange?.min ?? null,
+    yMax: yRange?.max ?? null,
+    xLabelFormat: (label) => dossierChartState.mode === "year" ? label : formatDashboardMonthYearFromISOShort(label),
+    xTooltipFormat: (label) => dossierChartState.mode === "year" ? `Anno ${label}` : formatDashboardDateLongFromISO(label),
+    tooltipMode: "nearestSeries",
+    tooltipExtra: (index, context) => {
+      const seriesKey = String(context?.series?.key || "");
+      const meta = tooltipMetaById[seriesKey]?.[index] || null;
+      const total = Number(meta?.totalValue);
+      const basis = Number(meta?.totalCostBasis);
+      const lines = [
+        `Valore: ${Number.isFinite(total) ? formatEuro(total) : "—"}`,
+        `Carico: ${Number.isFinite(basis) ? formatEuro(basis) : "—"}`,
+      ];
+      const delta = Number(meta?.capitalDelta);
+      if (meta?.isCapitalChange === true && Number.isFinite(delta)) {
+        lines.push(`Variazione capitale: ${formatDossierSignedEuro(delta)}`);
+      }
+      return lines;
+    },
+    fill: singleSeries,
+    pointRadius: 0,
+    pointHoverRadius: 4,
+    yZeroLine: { value: 0, color: "rgba(55,65,81,0.35)", width: 1, dash: [4, 4] },
+    xLabelWidth: 80,
+    legendFilter: (series) => series?.isClosed !== true,
+  });
+
+  dossierChartCanvas.classList.remove("chart-fade");
+  void dossierChartCanvas.offsetWidth;
+  dossierChartCanvas.classList.add("chart-fade");
+
+  console.log("[Dossier][chart debug]", {
+    seriesCount: chartSeries.length,
+    visibleSeries: chartSeries.map((series) => series.key),
+    range: dossierChartState.range,
+    mode: dossierChartState.mode,
+    pointsPerSeries: Object.fromEntries(chartSeries.map((series) => [series.key, series.values.filter((value) => Number.isFinite(value)).length])),
+    capitalMarkers: Object.fromEntries(chartSeries.map((series) => [
+      series.key,
+      (tooltipMetaById[series.key] || []).filter((point) => point?.isCapitalChange === true).map((point) => point.dateIso),
+    ])),
+  });
+}
+
+function setDossierDetailState(message, type = "info") {
+  if (!dossierDetailStateElement) return;
+
+  dossierDetailStateElement.textContent = message || "";
+  dossierDetailStateElement.className = `dashboard-chart-state ${message ? "is-visible" : ""} ${type ? `is-${type}` : ""}`;
+}
+
+function setDossierTotalsState(message, type = "info") {
+  if (!dossierTotalsStateElement) return;
+
+  dossierTotalsStateElement.textContent = message || "";
+  dossierTotalsStateElement.className = `dashboard-chart-state ${message ? "is-visible" : ""} ${type ? `is-${type}` : ""}`;
+}
+
+function parseDossierSnapshotDate(value) {
+  const text = String(value || "").slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(text) ? text : "";
+}
+
+function getDossierMonthIndex(year, month) {
+  const numericYear = Number(year);
+  const numericMonth = Number(month);
+
+  if (!Number.isFinite(numericYear) || !Number.isFinite(numericMonth)) return NaN;
+  return numericYear * 12 + numericMonth - 1;
+}
+
+function getDossierSelectedRange() {
+  const period = String(dossierDetailPeriodSelect?.value || "month");
+  const year = String(dossierDetailYearSelect?.value || "");
+  const month = String(dossierDetailMonthSelect?.value || "");
+  const numericYear = Number(year);
+  const numericMonth = Number(month);
+  const endMonthIndex = getDossierMonthIndex(year, month);
+
+  if (!year) return null;
+
+  if (period === "year") {
+    return {
+      startDate: `${year}-01-01`,
+      endDate: `${String(numericYear + 1).padStart(4, "0")}-01-01`,
+    };
+  }
+
+  if (!Number.isFinite(endMonthIndex) || !Number.isFinite(numericYear) || !Number.isFinite(numericMonth)) return null;
+
+  const windowSizeByPeriod = {
+    month: 1,
+    last3: 3,
+    last6: 6,
+    last12: 12,
+  };
+  const windowSize = windowSizeByPeriod[period] || 1;
+  const startDate = new Date(numericYear, numericMonth - windowSize, 1);
+  const endDate = new Date(numericYear, numericMonth, 1);
+
+  return {
+    startDate: formatTitoliDateValue(startDate),
+    endDate: formatTitoliDateValue(endDate),
+  };
+}
+
+function getDossierTotalsSelectedRange() {
+  const period = String(dossierTotalsPeriodSelect?.value || "month");
+  const year = String(dossierTotalsYearSelect?.value || "");
+  const month = String(dossierTotalsMonthSelect?.value || "");
+  const numericYear = Number(year);
+  const numericMonth = Number(month);
+  const endMonthIndex = getDossierMonthIndex(year, month);
+
+  if (!year) return null;
+
+  if (period === "year") {
+    return {
+      startDate: `${year}-01-01`,
+      endDate: `${String(numericYear + 1).padStart(4, "0")}-01-01`,
+    };
+  }
+
+  if (!Number.isFinite(endMonthIndex) || !Number.isFinite(numericYear) || !Number.isFinite(numericMonth)) return null;
+
+  const windowSizeByPeriod = {
+    month: 1,
+    last3: 3,
+    last6: 6,
+    last12: 12,
+  };
+  const windowSize = windowSizeByPeriod[period] || 1;
+  const startDate = new Date(numericYear, numericMonth - windowSize, 1);
+  const endDate = new Date(numericYear, numericMonth, 1);
+
+  return {
+    startDate: formatTitoliDateValue(startDate),
+    endDate: formatTitoliDateValue(endDate),
+  };
+}
+
+function isDossierSnapshotInRange(snapshotDate, range) {
+  if (!snapshotDate || !range) return false;
+  return snapshotDate >= range.startDate && snapshotDate < range.endDate;
+}
+
+function getLatestDossierBasis(accountId, snapshotDate) {
+  let latestEvent = null;
+  const normalizedAccountId = String(accountId || "").trim().toUpperCase();
+
+  (dossierPageState.basisEvents || []).forEach((event) => {
+    const eventAccountId = String(event.account_id || "").trim().toUpperCase();
+    const effectiveDate = parseDossierSnapshotDate(event.effective_date);
+    const costBasis = Number(event.cost_basis);
+
+    if (eventAccountId !== normalizedAccountId || !effectiveDate || effectiveDate > snapshotDate || !Number.isFinite(costBasis)) {
+      return;
+    }
+
+    if (!latestEvent || effectiveDate >= latestEvent.effectiveDate) {
+      latestEvent = { effectiveDate, costBasis };
+    }
+  });
+
+  return latestEvent ? latestEvent.costBasis : NaN;
+}
+
+function formatDossierPercent(value) {
+  if (!Number.isFinite(value)) return "—";
+  const sign = value > 0 ? "+" : value < 0 ? "-" : "";
+  const formatted = new Intl.NumberFormat("it-IT", {
+    style: "percent",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(Math.abs(value));
+  return `${sign}${formatted}`;
+}
+
+function formatDossierSignedEuro(value) {
+  if (!Number.isFinite(value)) return "—";
+  if (value === 0) return formatEuro(0);
+
+  const sign = value > 0 ? "+" : "-";
+  return `${sign}${formatEuro(Math.abs(value))}`;
+}
+
+function formatDossierMonthDivider(snapshotDate) {
+  const date = parseDashboardISODate(snapshotDate);
+  if (!date) return "";
+
+  const months = [
+    "Gennaio",
+    "Febbraio",
+    "Marzo",
+    "Aprile",
+    "Maggio",
+    "Giugno",
+    "Luglio",
+    "Agosto",
+    "Settembre",
+    "Ottobre",
+    "Novembre",
+    "Dicembre",
+  ];
+
+  return `${months[date.getMonth()]} ${date.getFullYear()}`;
+}
+
+function appendDossierMonthDivider(label) {
+  if (!dossierDetailTableBody || !label) return;
+
+  const row = document.createElement("tr");
+  const cell = document.createElement("td");
+
+  row.className = "dossier-month-divider-row";
+  cell.colSpan = 6;
+  cell.textContent = label;
+  row.appendChild(cell);
+  dossierDetailTableBody.appendChild(row);
+}
+
+function appendDossierTotalsMonthDivider(label) {
+  if (!dossierTotalsTableBody || !label) return;
+
+  const row = document.createElement("tr");
+  const cell = document.createElement("td");
+
+  row.className = "dossier-month-divider-row";
+  cell.colSpan = 6;
+  cell.textContent = label;
+  row.appendChild(cell);
+  dossierTotalsTableBody.appendChild(row);
+}
+
+function appendDossierAmountCell(row, value, formatter = formatEuro, colorize = false) {
+  const cell = document.createElement("td");
+
+  cell.classList.add("num");
+  cell.textContent = Number.isFinite(value) ? formatter(value) : "—";
+  if (colorize && Number.isFinite(value)) {
+    cell.classList.add(getValueClass(value));
+  }
+  row.appendChild(cell);
+}
+
+function buildDossierDetailRows() {
+  const accountId = String(dossierDetailDossierSelect?.value || "").trim().toUpperCase();
+  const range = getDossierSelectedRange();
+
+  if (!accountId || !range) return [];
+
+  const snapshots = (dossierPageState.snapshots || [])
+    .map((snapshot) => ({
+      snapshotDate: parseDossierSnapshotDate(snapshot.snapshot_date),
+      accountId: String(snapshot.account_id || "").trim().toUpperCase(),
+      total: Number(snapshot.value),
+    }))
+    .filter((snapshot) => snapshot.accountId === accountId)
+    .filter((snapshot) => snapshot.snapshotDate && Number.isFinite(snapshot.total))
+    .filter((snapshot) => snapshot.snapshotDate < range.endDate)
+    .sort((first, second) => first.snapshotDate.localeCompare(second.snapshotDate));
+
+  let previousTotal = NaN;
+  let previousBasis = null;
+  const rows = [];
+
+  snapshots.forEach((snapshot) => {
+    const basis = getLatestDossierBasis(accountId, snapshot.snapshotDate);
+    const basisValue = Number.isFinite(basis) ? basis : null;
+
+    if (snapshot.snapshotDate < range.startDate) {
+      previousTotal = snapshot.total;
+      previousBasis = basisValue;
+      return;
+    }
+
+    if (!isDossierSnapshotInRange(snapshot.snapshotDate, range)) return;
+
+    const deltaVsBasis = Number.isFinite(basis) ? snapshot.total - basis : NaN;
+    const pctVsBasis = Number.isFinite(basis) && basis !== 0 ? deltaVsBasis / basis : NaN;
+    const netCurrent = Number.isFinite(basis) && basis > 0 ? snapshot.total - basis : NaN;
+    const netPrevious = Number.isFinite(previousTotal) && Number.isFinite(previousBasis) && previousBasis > 0
+      ? previousTotal - previousBasis
+      : NaN;
+    let deltaVsPrevious = NaN;
+
+    if (Number.isFinite(previousTotal)) {
+      deltaVsPrevious = Number.isFinite(netCurrent) && Number.isFinite(netPrevious)
+        ? netCurrent - netPrevious
+        : snapshot.total - previousTotal;
+    }
+
+    rows.push({
+      ...snapshot,
+      basis,
+      deltaVsBasis,
+      pctVsBasis,
+      deltaVsPrevious,
+      previousTotalUsed: Number.isFinite(previousTotal) ? previousTotal : null,
+      basisChanged: false,
+    });
+
+    previousTotal = snapshot.total;
+    previousBasis = basisValue;
+  });
+
+  let previousBasisForFlag = null;
+  rows.forEach((row) => {
+    const basisValue = Number.isFinite(row.basis) ? row.basis : null;
+    row.basisChanged = Number.isFinite(previousBasisForFlag) && Number.isFinite(basisValue) && basisValue !== previousBasisForFlag;
+    previousBasisForFlag = basisValue;
+  });
+
+  return rows;
+}
+
+function renderDossierDetailTable() {
+  if (!dossierDetailTableBody) return;
+
+  try {
+    dossierDetailTableBody.textContent = "";
+
+    const rows = buildDossierDetailRows();
+
+    if (!rows.length) {
+      setDossierDetailState("Nessun dato disponibile per il filtro selezionato.", "empty");
+      return;
+    }
+
+    setDossierDetailState("");
+    let lastMonthKey = "";
+
+    rows
+      .slice()
+      .sort((first, second) => second.snapshotDate.localeCompare(first.snapshotDate))
+      .forEach((item) => {
+        const row = document.createElement("tr");
+        const dateCell = document.createElement("td");
+        const monthKey = String(item.snapshotDate || "").slice(0, 7);
+
+        if (monthKey && monthKey !== lastMonthKey) {
+          appendDossierMonthDivider(formatDossierMonthDivider(item.snapshotDate));
+          lastMonthKey = monthKey;
+        }
+        row.classList.toggle("dossier-basis-change-row", item.basisChanged);
+        dateCell.textContent = formatDate(item.snapshotDate);
+        row.appendChild(dateCell);
+
+        appendDossierAmountCell(row, item.basis);
+        appendDossierAmountCell(row, item.total);
+        appendDossierAmountCell(row, item.deltaVsBasis, formatDossierSignedEuro, true);
+        appendDossierAmountCell(row, item.pctVsBasis, formatDossierPercent, true);
+        appendDossierAmountCell(row, item.deltaVsPrevious, formatDossierSignedEuro, true);
+
+        console.log("[Dossier][table debug]", {
+          snapshot_date: item.snapshotDate,
+          value: item.total,
+          basis: Number.isFinite(item.basis) ? item.basis : null,
+          previousValueUsed: item.previousTotalUsed,
+          deltaPrev: Number.isFinite(item.deltaVsPrevious) ? item.deltaVsPrevious : null,
+        });
+
+        dossierDetailTableBody.appendChild(row);
+      });
+  } catch (error) {
+    console.error("[Dossier] Errore rendering tabella Dossier:", error);
+    if (dossierDetailTableBody) dossierDetailTableBody.textContent = "";
+    setDossierDetailState(`Errore tabella Dossier: ${error.message || error}`, "error");
+  }
+}
+
+function getDossierTotalsAccountIds() {
+  const accountIds = new Set();
+
+  (dossierPageState.snapshots || []).forEach((snapshot) => {
+    const accountId = String(snapshot.account_id || "").trim().toUpperCase();
+    if (accountId) accountIds.add(accountId);
+  });
+
+  return Array.from(accountIds);
+}
+
+function buildDossierBasisMap(accountIds, rangeEndDate) {
+  const allowedAccounts = new Set(accountIds);
+  const basisByAccount = {};
+
+  accountIds.forEach((accountId) => {
+    basisByAccount[accountId] = [];
+  });
+
+  (dossierPageState.basisEvents || []).forEach((event) => {
+    const accountId = String(event.account_id || "").trim().toUpperCase();
+    const effectiveDate = parseDossierSnapshotDate(event.effective_date);
+    const costBasis = Number(event.cost_basis);
+
+    if (!allowedAccounts.has(accountId) || !effectiveDate || effectiveDate >= rangeEndDate || !Number.isFinite(costBasis)) {
+      return;
+    }
+
+    basisByAccount[accountId].push({
+      effectiveDate,
+      costBasis,
+    });
+  });
+
+  accountIds.forEach((accountId) => {
+    basisByAccount[accountId].sort((first, second) => first.effectiveDate.localeCompare(second.effectiveDate));
+  });
+
+  return basisByAccount;
+}
+
+function buildDossierSnapshotsByDate(accountIds, rangeEndDate) {
+  const allowedAccounts = new Set(accountIds);
+  const snapshotsByDate = {};
+
+  (dossierPageState.snapshots || []).forEach((snapshot) => {
+    const accountId = String(snapshot.account_id || "").trim().toUpperCase();
+    const snapshotDate = parseDossierSnapshotDate(snapshot.snapshot_date);
+    const value = Number(snapshot.value);
+
+    if (!allowedAccounts.has(accountId) || !snapshotDate || snapshotDate >= rangeEndDate || !Number.isFinite(value)) {
+      return;
+    }
+
+    if (!Array.isArray(snapshotsByDate[snapshotDate])) {
+      snapshotsByDate[snapshotDate] = [];
+    }
+
+    snapshotsByDate[snapshotDate].push({ accountId, value });
+  });
+
+  return snapshotsByDate;
+}
+
+function buildDossierTotalsRows() {
+  const range = getDossierTotalsSelectedRange();
+  if (!range) return [];
+
+  const accountIds = getDossierTotalsAccountIds();
+  if (!accountIds.length) return [];
+
+  const snapshotsByDate = buildDossierSnapshotsByDate(accountIds, range.endDate);
+  const timeline = Object.keys(snapshotsByDate).sort((first, second) => first.localeCompare(second));
+  if (!timeline.length) return [];
+
+  const basisByAccount = buildDossierBasisMap(accountIds, range.endDate);
+  const basisIndexByAccount = {};
+  const lastBasisByAccount = {};
+
+  accountIds.forEach((accountId) => {
+    basisIndexByAccount[accountId] = 0;
+    lastBasisByAccount[accountId] = null;
+  });
+
+  let previousTotalValue = null;
+  let previousTotalBasis = null;
+  const rows = [];
+
+  timeline.forEach((snapshotDate) => {
+    let totalValue = 0;
+    let valueCount = 0;
+    let totalBasis = 0;
+    let basisCount = 0;
+    const basisSeenAccounts = new Set();
+    const daySnapshots = snapshotsByDate[snapshotDate] || [];
+
+    daySnapshots.forEach((snapshot) => {
+      const accountId = snapshot.accountId;
+      const basisList = basisByAccount[accountId] || [];
+      let basisIndex = basisIndexByAccount[accountId] || 0;
+
+      while (basisIndex < basisList.length && basisList[basisIndex].effectiveDate <= snapshotDate) {
+        lastBasisByAccount[accountId] = basisList[basisIndex].costBasis;
+        basisIndex += 1;
+      }
+
+      basisIndexByAccount[accountId] = basisIndex;
+      totalValue += snapshot.value;
+      valueCount += 1;
+
+      if (!basisSeenAccounts.has(accountId) && Number.isFinite(lastBasisByAccount[accountId])) {
+        totalBasis += lastBasisByAccount[accountId];
+        basisCount += 1;
+        basisSeenAccounts.add(accountId);
+      }
+    });
+
+    const rowTotalValue = valueCount ? totalValue : null;
+    const rowTotalBasis = basisCount ? totalBasis : null;
+
+    if (snapshotDate < range.startDate) {
+      if (Number.isFinite(rowTotalValue)) {
+        previousTotalValue = rowTotalValue;
+        previousTotalBasis = Number.isFinite(rowTotalBasis) ? rowTotalBasis : null;
+      }
+      return;
+    }
+
+    if (!isDossierSnapshotInRange(snapshotDate, range)) return;
+
+    const hasBasis = Number.isFinite(rowTotalBasis) && rowTotalBasis > 0;
+    const deltaVsBasis = hasBasis && Number.isFinite(rowTotalValue) ? rowTotalValue - rowTotalBasis : NaN;
+    const pctVsBasis = hasBasis && Number.isFinite(deltaVsBasis) ? deltaVsBasis / rowTotalBasis : NaN;
+    const netCurrent = Number.isFinite(rowTotalValue) && Number.isFinite(rowTotalBasis) && rowTotalBasis > 0
+      ? rowTotalValue - rowTotalBasis
+      : NaN;
+    const netPrevious = Number.isFinite(previousTotalValue) && Number.isFinite(previousTotalBasis) && previousTotalBasis > 0
+      ? previousTotalValue - previousTotalBasis
+      : NaN;
+    let deltaVsPrevious = NaN;
+
+    if (Number.isFinite(previousTotalValue) && Number.isFinite(rowTotalValue)) {
+      deltaVsPrevious = Number.isFinite(netCurrent) && Number.isFinite(netPrevious)
+        ? netCurrent - netPrevious
+        : rowTotalValue - previousTotalValue;
+    }
+
+    rows.push({
+      snapshotDate,
+      total: Number.isFinite(rowTotalValue) ? rowTotalValue : NaN,
+      basis: Number.isFinite(rowTotalBasis) ? rowTotalBasis : NaN,
+      deltaVsBasis,
+      pctVsBasis,
+      deltaVsPrevious,
+      previousTotalUsed: Number.isFinite(previousTotalValue) ? previousTotalValue : null,
+      basisChanged: false,
+    });
+
+    if (Number.isFinite(rowTotalValue)) {
+      previousTotalValue = rowTotalValue;
+      previousTotalBasis = Number.isFinite(rowTotalBasis) ? rowTotalBasis : null;
+    }
+  });
+
+  let previousBasisForFlag = null;
+  rows.forEach((row) => {
+    const basisValue = Number.isFinite(row.basis) ? row.basis : null;
+    row.basisChanged = Number.isFinite(previousBasisForFlag) && Number.isFinite(basisValue) && basisValue !== previousBasisForFlag;
+    previousBasisForFlag = basisValue;
+  });
+
+  return rows;
+}
+
+function renderDossierTotalsTable() {
+  if (!dossierTotalsTableBody) return;
+
+  try {
+    dossierTotalsTableBody.textContent = "";
+
+    const rows = buildDossierTotalsRows();
+
+    if (!rows.length) {
+      setDossierTotalsState("Nessun dato disponibile per il filtro selezionato.", "empty");
+      return;
+    }
+
+    setDossierTotalsState("");
+    let lastMonthKey = "";
+
+    rows
+      .slice()
+      .sort((first, second) => second.snapshotDate.localeCompare(first.snapshotDate))
+      .forEach((item) => {
+        const row = document.createElement("tr");
+        const dateCell = document.createElement("td");
+        const monthKey = String(item.snapshotDate || "").slice(0, 7);
+
+        if (monthKey && monthKey !== lastMonthKey) {
+          appendDossierTotalsMonthDivider(formatDossierMonthDivider(item.snapshotDate));
+          lastMonthKey = monthKey;
+        }
+
+        row.classList.toggle("dossier-basis-change-row", item.basisChanged);
+        dateCell.textContent = formatDate(item.snapshotDate);
+        row.appendChild(dateCell);
+
+        appendDossierAmountCell(row, item.basis);
+        appendDossierAmountCell(row, item.total);
+        appendDossierAmountCell(row, item.deltaVsBasis, formatDossierSignedEuro, true);
+        appendDossierAmountCell(row, item.pctVsBasis, formatDossierPercent, true);
+        appendDossierAmountCell(row, item.deltaVsPrevious, formatDossierSignedEuro, true);
+
+        console.log("[Dossier][totals debug]", {
+          date: item.snapshotDate,
+          totalValue: item.total,
+          totalBasis: Number.isFinite(item.basis) ? item.basis : null,
+          previousTotalValue: item.previousTotalUsed,
+          deltaPrev: Number.isFinite(item.deltaVsPrevious) ? item.deltaVsPrevious : null,
+        });
+
+        dossierTotalsTableBody.appendChild(row);
+      });
+  } catch (error) {
+    console.error("[Dossier] Errore rendering tabella Totali:", error);
+    if (dossierTotalsTableBody) dossierTotalsTableBody.textContent = "";
+    setDossierTotalsState(`Errore tabella Totali: ${error.message || error}`, "error");
+  }
+}
+
+async function fetchDossierBaseData() {
+  if (!supabaseClient) {
+    console.error("[Dossier] Credenziali Supabase mancanti.");
+    return;
+  }
+
+  try {
+    const [dossiersResult, snapshotsResult, basisEventsResult] = await Promise.all([
+      supabaseClient
+        .from("dossiers")
+        .select("account_id,label,is_closed,order,visible"),
+      supabaseClient
+        .from("investments_snapshots")
+        .select("snapshot_date,account_id,value"),
+      supabaseClient
+        .from("investments_basis_events")
+        .select("effective_date,account_id,cost_basis"),
+    ]);
+
+    if (dossiersResult.error) {
+      console.error("[Dossier] Errore lettura dossiers:", dossiersResult.error);
+    }
+
+    if (snapshotsResult.error) {
+      console.error("[Dossier] Errore lettura investments_snapshots:", snapshotsResult.error);
+    }
+
+    if (basisEventsResult.error) {
+      console.error("[Dossier] Errore lettura investments_basis_events:", basisEventsResult.error);
+    }
+
+    if (dossiersResult.error || snapshotsResult.error || basisEventsResult.error) {
+      return;
+    }
+
+    dossierPageState = {
+      dossiers: dossiersResult.data ?? [],
+      snapshots: snapshotsResult.data ?? [],
+      basisEvents: basisEventsResult.data ?? [],
+    };
+
+    console.log("[Dossier] dossiers:", dossiersResult.data ?? []);
+    console.log("[Dossier] snapshots:", snapshotsResult.data ?? []);
+    console.log("[Dossier] basis events:", basisEventsResult.data ?? []);
+    populateDossierControls();
+    initializeDossierChartData();
+    renderDossierDetailTable();
+    renderDossierTotalsTable();
+  } catch (error) {
+    console.error("[Dossier] Errore fetch dati base:", error);
+  }
+}
+
 async function loadMovimenti() {
   if (!supabaseClient) {
     renderMovimentiState("error-state", "Credenziali Supabase mancanti.");
@@ -4448,6 +5977,10 @@ if (investmentsCanvas) {
 
 if (titoliInsertRoot && titoliSnapshotDateInput && titoliWeekPicker) {
   initTitoliInsertPage();
+}
+
+if (dossierPageRoot) {
+  initDossierPage();
 }
 
 if (movimentiTableElement && movimentiMonthSelect && movimentiYearSelect && applyMovimentiFilterButton) {
