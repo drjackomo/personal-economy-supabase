@@ -12,24 +12,190 @@
   <body>
     <div id="navbar-root"></div>
 
-    <main class="app">
-      <section class="panel">
-        <div class="section-heading">
-          <h1>Dashboard</h1>
-          <p class="subtitle">Test connessione Supabase e lettura tabella transactions.</p>
+    <main class="app dashboard-page">
+      <div class="dashboard-heading">
+        <h1>Dashboard</h1>
+      </div>
+
+      <div id="dashboard-error" class="dashboard-error" aria-live="polite"></div>
+
+      <section id="dashboard-cards" class="dashboard-cards" aria-label="Riepilogo patrimonio">
+        <article class="dashboard-card dashboard-card-cc">
+          <div class="dashboard-card-header">
+            <h2>Conto corrente</h2>
+            <span id="dashboard-cc-date" class="dashboard-card-date">--</span>
+          </div>
+          <div id="dashboard-cc-value" class="dashboard-card-value">Carico...</div>
+        </article>
+
+        <article class="dashboard-card dashboard-card-portfolio">
+          <div class="dashboard-card-header">
+            <h2>Tot. Portafoglio</h2>
+            <span id="dashboard-portfolio-date" class="dashboard-card-date">--</span>
+          </div>
+          <div id="dashboard-portfolio-value" class="dashboard-card-value">Carico...</div>
+          <div class="dashboard-card-splits">
+            <div class="dashboard-card-split">
+              <span>Jack</span>
+              <strong id="dashboard-portfolio-jack">Carico...</strong>
+            </div>
+            <div class="dashboard-card-split">
+              <span>Figli</span>
+              <strong id="dashboard-portfolio-figli">Carico...</strong>
+            </div>
+          </div>
+        </article>
+
+        <article class="dashboard-card dashboard-card-fineco">
+          <div class="dashboard-card-header">
+            <h2>Tot. Fineco</h2>
+            <span id="dashboard-fineco-date" class="dashboard-card-date">--</span>
+          </div>
+          <div id="dashboard-fineco-value" class="dashboard-card-value">Carico...</div>
+          <div class="dashboard-card-splits">
+            <div class="dashboard-card-split">
+              <span>Jack</span>
+              <strong id="dashboard-fineco-jack">Carico...</strong>
+            </div>
+            <div class="dashboard-card-split">
+              <span>Figli</span>
+              <strong id="dashboard-fineco-figli">Carico...</strong>
+            </div>
+          </div>
+        </article>
+
+        <article class="dashboard-card dashboard-card-revolut">
+          <div class="dashboard-card-header">
+            <h2>Revolut</h2>
+            <span id="dashboard-revolut-date" class="dashboard-card-date">--</span>
+          </div>
+          <div id="dashboard-revolut-value" class="dashboard-card-value">Carico...</div>
+          <div class="dashboard-card-splits">
+            <div class="dashboard-card-split">
+              <span>Jack</span>
+              <strong id="dashboard-revolut-jack">Carico...</strong>
+            </div>
+            <div class="dashboard-card-split">
+              <span>Cointestato</span>
+              <strong id="dashboard-revolut-join">Carico...</strong>
+            </div>
+          </div>
+        </article>
+      </section>
+
+      <section class="dashboard-chart-section chart-wrap" aria-labelledby="wealth-trend-title">
+        <div class="dashboard-chart-header chart-card-title">
+          <div>
+            <h2 id="wealth-trend-title" class="chart-title">Andamento patrimonio</h2>
+            <div id="patrimonySubtitle" class="chart-subtitle">—</div>
+            <div class="chart-filters" id="patrimonyFilters">
+              <select class="chart-input" id="patrimonyPreset">
+                <option value="all">Tutto</option>
+                <option value="ytd">YTD</option>
+                <option value="last12">Ultimi 12 mesi</option>
+                <option value="last24">Ultimi 24 mesi</option>
+                <option value="last36">Ultimi 3 anni</option>
+                <option value="last60">Ultimi 5 anni</option>
+              </select>
+              <label class="chart-filter">
+                <span>Da</span>
+                <input type="month" class="chart-input" id="patrimonyFrom">
+              </label>
+              <label class="chart-filter">
+                <span>A</span>
+                <input type="month" class="chart-input" id="patrimonyTo">
+              </label>
+              <button type="button" class="chart-btn" id="patrimonyApply">Applica</button>
+              <button type="button" class="chart-btn ghost" id="patrimonyReset">Annulla</button>
+            </div>
+          </div>
+          <div class="chart-header-right">
+            <div class="chart-range" id="patrimonyRangeSummary">—</div>
+            <div class="chart-toggle" id="patrimonyToggle" role="tablist" aria-label="Vista patrimonio">
+              <button type="button" class="chart-toggle-btn is-active" id="patrimonyModeMonth" data-mode="month">Mese</button>
+              <button type="button" class="chart-toggle-btn" id="patrimonyModeYear" data-mode="year">Anno</button>
+              <button type="button" class="chart-toggle-btn" id="patrimonyTrendToggle" data-trend="true">Trend</button>
+            </div>
+          </div>
         </div>
 
-        <div class="status-row">
-          <span class="status-label">Stato:</span>
-          <span id="connection-status" class="status status-warning">Credenziali da configurare</span>
+        <div id="wealth-trend-state" class="dashboard-chart-state" aria-live="polite">Carico grafico...</div>
+        <div class="dashboard-chart-frame">
+          <canvas id="wealth-trend-chart" class="dashboard-chart-canvas chart-canvas" height="320"></canvas>
+          <div id="wealth-trend-legend" class="legend"></div>
+          <div id="wealth-trend-tooltip" class="dashboard-chart-tooltip" role="tooltip"></div>
+          <div class="patrimony-insights">
+            <div class="insight">
+              <div class="insight-label">Crescita media annua</div>
+              <div class="insight-value" id="patrimonyCagr">—</div>
+            </div>
+            <div class="insight">
+              <div class="insight-label">Miglior anno</div>
+              <div class="insight-value" id="patrimonyBest">—</div>
+            </div>
+            <div class="insight">
+              <div class="insight-label">Drawdown max</div>
+              <div class="insight-value" id="patrimonyDd">—</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="dashboard-chart-section chart-wrap" id="investmentsChartCard" aria-labelledby="investments-chart-title">
+        <div class="dashboard-chart-header chart-card-title">
+          <div>
+            <h2 id="investments-chart-title" class="chart-title">Andamento investimenti (%)</h2>
+            <div id="invSubtitle" class="chart-subtitle">—</div>
+            <div class="chart-filters" id="invFilters">
+              <select class="chart-input" id="invPreset">
+                <option value="all">Tutto</option>
+                <option value="ytd">YTD</option>
+                <option value="last12">Ultimi 12 mesi</option>
+                <option value="last24">Ultimi 24 mesi</option>
+                <option value="last36">Ultimi 3 anni</option>
+                <option value="last60">Ultimi 5 anni</option>
+              </select>
+              <label class="chart-filter">
+                <span>Da</span>
+                <input type="month" class="chart-input" id="invFrom">
+              </label>
+              <label class="chart-filter">
+                <span>A</span>
+                <input type="month" class="chart-input" id="invTo">
+              </label>
+              <button type="button" class="chart-btn" id="invApply">Applica</button>
+              <button type="button" class="chart-btn ghost" id="invReset">Annulla</button>
+            </div>
+          </div>
+          <div class="chart-header-right">
+            <div class="chart-range" id="invRangeSummary">—</div>
+            <div class="chart-toggle" id="invToggle" role="tablist" aria-label="Vista investimenti">
+              <button type="button" class="chart-toggle-btn is-active" id="invModeMonth" data-mode="month">Mese</button>
+              <button type="button" class="chart-toggle-btn" id="invModeYear" data-mode="year">Anno</button>
+              <button type="button" class="chart-toggle-btn" id="invTrendToggle" data-mode="trend">Trend</button>
+            </div>
+          </div>
         </div>
 
-        <button id="load-transactions" type="button">Carica transactions</button>
-
-        <section class="results">
-          <h2>Risultati</h2>
-          <div id="transactions-output" class="output-container">Nessun dato caricato.</div>
-        </section>
+        <div id="investments-chart-state" class="dashboard-chart-state" aria-live="polite">Carico investimenti...</div>
+        <div class="dashboard-chart-frame">
+          <canvas id="investmentsChartCanvas" class="dashboard-chart-canvas chart-canvas" height="320"></canvas>
+          <div id="investmentsLegend" class="legend"></div>
+          <div class="patrimony-insights">
+            <div class="insight">
+              <div class="insight-label">Rendimento medio annuo</div>
+              <div class="insight-value" id="invCagr">—</div>
+            </div>
+            <div class="insight">
+              <div class="insight-label">Miglior periodo</div>
+              <div class="insight-value" id="invBest">—</div>
+            </div>
+            <div class="insight">
+              <div class="insight-label">Drawdown max</div>
+              <div class="insight-value" id="invDd">—</div>
+            </div>
+          </div>
+        </div>
       </section>
     </main>
   </body>
