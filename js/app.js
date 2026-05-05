@@ -3980,6 +3980,33 @@ async function saveTitoliDossier(card, button) {
   }
 }
 
+async function saveAllTitoliDossiers(button) {
+  const originalText = button.textContent;
+  const cards = Array.from(titoliInsertRoot.querySelectorAll(".titoli-dossier-card"));
+
+  button.disabled = true;
+  button.textContent = "Salvataggio...";
+
+  try {
+    if (!cards.length) {
+      alert("Nessun dossier disponibile da salvare.");
+      return;
+    }
+
+    for (const card of cards) {
+      const saveButton = card.querySelector("[data-titoli-save-placeholder]");
+      await saveTitoliDossier(card, saveButton || button);
+    }
+
+    button.textContent = "Salvato";
+  } finally {
+    window.setTimeout(() => {
+      button.textContent = originalText || "Salva tutto";
+      button.disabled = false;
+    }, 1200);
+  }
+}
+
 function createTitoliTotalsBar() {
   const totalsBar = document.createElement("div");
   const previousTotal = document.createElement("div");
@@ -4149,6 +4176,11 @@ function bindTitoliSavePlaceholders(rootElement) {
     if (button.dataset.saveBound === "true") return;
     button.dataset.saveBound = "true";
     button.addEventListener("click", () => {
+      if (button.dataset.titoliSavePlaceholder === "all") {
+        saveAllTitoliDossiers(button);
+        return;
+      }
+
       if (button.dataset.titoliSavePlaceholder !== "all") {
         const card = button.closest(".titoli-dossier-card");
         if (card) {
