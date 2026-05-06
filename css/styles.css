@@ -2019,6 +2019,30 @@ td.in-totals-column {
   margin-top: 6px;
 }
 
+.modal-action-left {
+  margin-right: auto;
+}
+
+.update-month-modal-card {
+  width: min(520px, 100%);
+}
+
+.movimenti-page-message {
+  min-height: 20px;
+  margin: -4px 0 12px;
+  color: #166534;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.movimenti-page-message:not(.is-visible) {
+  visibility: hidden;
+}
+
+.movimenti-page-message.is-error {
+  color: #dc2626;
+}
+
 .danger-action {
   border-radius: 10px;
   background: #dc2626;

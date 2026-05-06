@@ -14,9 +14,12 @@ const yearlyExpenseElement = document.getElementById("yearly-expense");
 const monthlyTotalElement = document.getElementById("monthly-total");
 const monthlyIncomeElement = document.getElementById("monthly-income");
 const monthlyExpenseElement = document.getElementById("monthly-expense");
+const movimentiPageMessage = document.getElementById("movimenti-page-message");
 const movementModal = document.getElementById("movement-modal");
 const movementModalTitle = document.getElementById("movement-modal-title");
 const openMovementModalButton = document.getElementById("open-movement-modal");
+const openUpdateMonthToolbarButton = document.getElementById("open-update-month-toolbar");
+const openUpdateMonthModalButton = document.getElementById("open-update-month-modal");
 const openRevolutModalButton = document.getElementById("open-revolut-modal");
 const closeMovementModalButton = document.getElementById("close-movement-modal");
 const cancelMovementModalButton = document.getElementById("cancel-movement-modal");
@@ -29,6 +32,13 @@ const movementInTotalsSwitch = document.getElementById("consuntivoSwitch");
 const currentBalancePreview = document.getElementById("current-balance-preview");
 const nextBalancePreview = document.getElementById("next-balance-preview");
 const movementModalError = document.getElementById("movement-modal-error");
+const updateMonthModal = document.getElementById("update-month-modal");
+const closeUpdateMonthModalButton = document.getElementById("close-update-month-modal");
+const cancelUpdateMonthModalButton = document.getElementById("cancel-update-month-modal");
+const confirmUpdateMonthButton = document.getElementById("confirm-update-month");
+const updateMonthInput = document.getElementById("update-month-input");
+const updateMonthNoteInput = document.getElementById("update-month-note");
+const updateMonthError = document.getElementById("update-month-error");
 const revolutModal = document.getElementById("revolut-modal");
 const closeRevolutModalButton = document.getElementById("close-revolut-modal");
 const cancelRevolutModalButton = document.getElementById("cancel-revolut-modal");
@@ -1291,6 +1301,7 @@ function initPatrimonyState(points) {
     console.warn("Impossibile leggere stato grafico patrimonio:", error);
   }
 
+  patrimonyState.range.end = bounds.max;
   syncPatrimonyControls();
 }
 
@@ -2094,6 +2105,8 @@ function initInvestmentsState(points) {
   } catch (error) {
     console.warn("Impossibile leggere stato grafico investimenti:", error);
   }
+
+  investmentsViewState.range.end = bounds.max;
 
   if (investmentsViewState.mode === "trend") {
     investmentsViewState.trend = true;
@@ -2993,6 +3006,325 @@ function showMovementModalError(message) {
   movementModalError.textContent = message;
 }
 
+function setMovimentiPageMessage(message, type = "success") {
+  if (!movimentiPageMessage) return;
+
+  movimentiPageMessage.textContent = message || "";
+  movimentiPageMessage.className = `movimenti-page-message ${message ? "is-visible" : ""} ${type ? `is-${type}` : ""}`;
+}
+
+function normalizePeriodKey(periodKey) {
+  const match = String(periodKey || "").trim().match(/^(\d{4})-(\d{2})$/);
+
+  if (!match) {
+    return null;
+  }
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+
+  if (!Number.isFinite(year) || !Number.isFinite(month) || month < 1 || month > 12) {
+    return null;
+  }
+
+  return {
+    period: `${String(year).padStart(4, "0")}-${String(month).padStart(2, "0")}`,
+    year,
+    month,
+  };
+}
+
+function getCurrentPeriodKey() {
+  const today = new Date();
+  return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function getMonthDateRange(year, month) {
+  const startDate = `${String(year).padStart(4, "0")}-${String(month).padStart(2, "0")}-01`;
+  const nextMonth = month === 12 ? 1 : month + 1;
+  const nextYear = month === 12 ? year + 1 : year;
+  const endDateExclusive = `${String(nextYear).padStart(4, "0")}-${String(nextMonth).padStart(2, "0")}-01`;
+
+  return { startDate, endDateExclusive };
+}
+
+async function getFinecoBalanceByMonth(year, month, period) {
+  const { startDate, endDateExclusive } = getMonthDateRange(year, month);
+  console.log("[patrimony-month] query transactions", {
+    table: "transactions",
+    period,
+    account_id: "FINECO_MAIN",
+    startDate,
+    endDateExclusive,
+    order: ["date desc", "created_at desc"],
+    limit: 1,
+  });
+
+  const { data, error } = await supabaseClient
+    .from("transactions")
+    .select("date,created_at,balance")
+    .eq("account_id", "FINECO_MAIN")
+    .gte("date", startDate)
+    .lt("date", endDateExclusive)
+    .order("date", { ascending: false })
+    .order("created_at", { ascending: false })
+    .limit(1);
+
+  if (error) {
+    console.error("[patrimony-month] errore Supabase transactions", error);
+    throw error;
+  }
+
+  const balance = Number(data?.[0]?.balance);
+  console.log("[patrimony-month] risultato ultimo balance conto corrente", {
+    row: data?.[0] ?? null,
+    balance,
+  });
+
+  if (!data?.length || !Number.isFinite(balance)) {
+    throw new Error(`Nessuna riga transactions per ${period}.`);
+  }
+
+  return balance;
+}
+
+async function getInvestmentsTotalByMonth(year, month, period) {
+  const { startDate, endDateExclusive } = getMonthDateRange(year, month);
+  console.log("[patrimony-month] query investments_snapshots", {
+    table: "investments_snapshots",
+    period,
+    startDate,
+    endDateExclusive,
+    order: ["snapshot_date desc"],
+  });
+
+  const { data, error } = await supabaseClient
+    .from("investments_snapshots")
+    .select("snapshot_date,value")
+    .gte("snapshot_date", startDate)
+    .lt("snapshot_date", endDateExclusive)
+    .order("snapshot_date", { ascending: false });
+
+  if (error) {
+    console.error("[patrimony-month] errore Supabase investments_snapshots", error);
+    throw error;
+  }
+
+  const snapshots = data ?? [];
+  const latestDate = snapshots.reduce((latest, snapshot) => {
+    const dateIso = normalizeDashboardISODate(snapshot.snapshot_date);
+    return dateIso && (!latest || dateIso > latest) ? dateIso : latest;
+  }, "");
+
+  if (!latestDate) {
+    throw new Error(`Nessuna riga investments_snapshots per ${period}.`);
+  }
+
+  let total = 0;
+  let found = false;
+
+  snapshots.forEach((snapshot) => {
+    if (normalizeDashboardISODate(snapshot.snapshot_date) !== latestDate) return;
+
+    const value = Number(snapshot.value);
+    if (!Number.isFinite(value)) return;
+
+    total += value;
+    found = true;
+  });
+
+  if (!found) {
+    throw new Error(`Nessun valore investments_snapshots valido per ${period}.`);
+  }
+
+  console.log("[patrimony-month] risultato totale investimenti", {
+    latestDate,
+    rowsOnLatestDate: snapshots.filter((snapshot) => normalizeDashboardISODate(snapshot.snapshot_date) === latestDate).length,
+    total,
+  });
+
+  return total;
+}
+
+async function upsertPatrimonyHistoryMonth(periodKey, userNote) {
+  console.log("[patrimony-month] conferma aggiornamento mese", { periodKey, userNote });
+  const normalized = normalizePeriodKey(periodKey);
+
+  if (!normalized) {
+    throw new Error("periodKey non valido. Usa formato YYYY-MM.");
+  }
+
+  const { period, year, month } = normalized;
+  const userNoteText = String(userNote || "").trim();
+  console.log("[patrimony-month] period selezionato", period);
+  console.log("[patrimony-month] year/month calcolati", { year, month });
+
+  const [ccBalance, portfolioTotal] = await Promise.all([
+    getFinecoBalanceByMonth(year, month, period),
+    getInvestmentsTotalByMonth(year, month, period),
+  ]);
+  const patrimonyTotalRaw = ccBalance + portfolioTotal;
+  const patrimonyTotal = Math.round((patrimonyTotalRaw + Number.EPSILON) * 100) / 100;
+  console.log("[patrimony-month] patrimony_total finale", {
+    ccBalance,
+    portfolioTotal,
+    patrimonyTotalRaw,
+    patrimonyTotal,
+  });
+
+  if (!Number.isFinite(patrimonyTotal)) {
+    throw new Error(`Impossibile calcolare il patrimonio per ${period}: dati insufficienti.`);
+  }
+
+  const payload = {
+    period,
+    year,
+    month,
+    patrimony_total: patrimonyTotal,
+  };
+
+  if (userNoteText) {
+    payload.note = userNoteText;
+  }
+
+  console.log("[patrimony-month] verifica esistenza riga patrimony_history per period", {
+    table: "patrimony_history",
+    period,
+  });
+
+  const { data: existingRows, error: readError } = await supabaseClient
+    .from("patrimony_history")
+    .select("id,period,note")
+    .eq("period", period)
+    .order("id", { ascending: true })
+    .limit(1);
+
+  if (readError) {
+    console.error("[patrimony-month] errore Supabase select patrimony_history", readError);
+    throw readError;
+  }
+
+  const existingRow = existingRows?.[0] ?? null;
+  console.log("[patrimony-month] risultato verifica patrimony_history", {
+    existingRow,
+    count: existingRows?.length ?? 0,
+  });
+
+  console.log("[patrimony-month] payload insert/update", {
+    mode: existingRow ? "update" : "insert",
+    id: existingRow?.id ?? null,
+    payload,
+  });
+
+  const saveResult = existingRow
+    ? await supabaseClient.from("patrimony_history").update(payload).eq("id", existingRow.id).select("id,period,year,month,patrimony_total,note")
+    : await supabaseClient.from("patrimony_history").insert(payload).select("id,period,year,month,patrimony_total,note");
+
+  console.log("[patrimony-month] risposta Supabase patrimony_history", saveResult);
+
+  if (saveResult.error) {
+    console.error("[patrimony-month] errore Supabase salvataggio patrimony_history", saveResult.error);
+    throw saveResult.error;
+  }
+
+  const savedRow = saveResult.data?.[0] ?? null;
+  if (!savedRow) {
+    throw new Error(`Salvataggio patrimony_history senza riga restituita per ${period}.`);
+  }
+
+  console.log("[patrimony-month] risultato salvato", {
+    period,
+    updated: Boolean(existingRow),
+    savedRow,
+  });
+
+  return {
+    ok: true,
+    period,
+    value: patrimonyTotal,
+    updated: Boolean(existingRow),
+    note: savedRow?.note || existingRow?.note || userNoteText,
+    row: savedRow,
+  };
+}
+
+function setUpdateMonthError(message) {
+  if (!updateMonthError) return;
+
+  updateMonthError.textContent = message || "";
+}
+
+function setUpdateMonthSubmitting(isSubmitting) {
+  if (confirmUpdateMonthButton) {
+    confirmUpdateMonthButton.disabled = Boolean(isSubmitting);
+    confirmUpdateMonthButton.textContent = isSubmitting ? "Aggiorno..." : "Aggiorna";
+  }
+
+  [
+    cancelUpdateMonthModalButton,
+    closeUpdateMonthModalButton,
+    updateMonthInput,
+    updateMonthNoteInput,
+  ].forEach((element) => {
+    if (element) element.disabled = Boolean(isSubmitting);
+  });
+}
+
+function openUpdateMonthModal() {
+  if (!updateMonthModal) return;
+
+  console.log("[patrimony-month] apertura modale");
+  setMovimentiPageMessage("");
+  setUpdateMonthSubmitting(false);
+  setUpdateMonthError("");
+  updateMonthInput.value = getCurrentPeriodKey();
+  updateMonthNoteInput.value = "";
+  updateMonthModal.classList.add("is-open");
+  updateMonthModal.setAttribute("aria-hidden", "false");
+  updateMonthInput.focus();
+}
+
+function closeUpdateMonthModal() {
+  if (!updateMonthModal) return;
+
+  updateMonthModal.classList.remove("is-open");
+  updateMonthModal.setAttribute("aria-hidden", "true");
+  setUpdateMonthSubmitting(false);
+  setUpdateMonthError("");
+}
+
+async function saveUpdateMonth() {
+  if (!supabaseClient) {
+    setUpdateMonthError("Credenziali Supabase mancanti.");
+    return;
+  }
+
+  const normalized = normalizePeriodKey(updateMonthInput.value);
+
+  if (!normalized) {
+    setUpdateMonthError("Formato non valido. Usa YYYY-MM.");
+    return;
+  }
+
+  setUpdateMonthSubmitting(true);
+  setUpdateMonthError("");
+  setMovimentiPageMessage("");
+
+  try {
+    const result = await upsertPatrimonyHistoryMonth(normalized.period, updateMonthNoteInput.value);
+    closeUpdateMonthModal();
+    setMovimentiPageMessage(`Mese ${result.period} aggiornato`, "success");
+    console.log("[patrimony-month] salvataggio completato", result);
+  } catch (error) {
+    console.error("[patrimony-month] errore aggiornamento mese", error);
+    setUpdateMonthError(error.message || "Errore aggiornamento mese");
+  } finally {
+    if (updateMonthModal.classList.contains("is-open")) {
+      setUpdateMonthSubmitting(false);
+    }
+  }
+}
+
 function getMovementFormData() {
   const date = movementDateInput.value;
   const description = movementDescriptionInput.value.trim();
@@ -3464,6 +3796,27 @@ function initMovementModal() {
   movementAmountInput.addEventListener("input", updateSaldoPreview);
   movementTypeSwitch.addEventListener("change", updateSaldoPreview);
   movimentiTableElement.addEventListener("click", handleMovimentiTableAction);
+}
+
+function initUpdateMonthModal() {
+  [openUpdateMonthToolbarButton, openUpdateMonthModalButton].forEach((button) => {
+    if (button) button.addEventListener("click", openUpdateMonthModal);
+  });
+  closeUpdateMonthModalButton.addEventListener("click", closeUpdateMonthModal);
+  cancelUpdateMonthModalButton.addEventListener("click", closeUpdateMonthModal);
+  confirmUpdateMonthButton.addEventListener("click", saveUpdateMonth);
+
+  updateMonthModal.addEventListener("click", (event) => {
+    if (event.target === updateMonthModal) {
+      closeUpdateMonthModal();
+    }
+  });
+
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && updateMonthModal.classList.contains("is-open")) {
+      closeUpdateMonthModal();
+    }
+  });
 }
 
 function initRevolutModal() {
@@ -6002,6 +6355,18 @@ if (movimentiTableElement && movimentiMonthSelect && movimentiYearSelect && appl
     movementModalError
   ) {
     initMovementModal();
+  }
+  if (
+    updateMonthModal &&
+    (openUpdateMonthToolbarButton || openUpdateMonthModalButton) &&
+    closeUpdateMonthModalButton &&
+    cancelUpdateMonthModalButton &&
+    confirmUpdateMonthButton &&
+    updateMonthInput &&
+    updateMonthNoteInput &&
+    updateMonthError
+  ) {
+    initUpdateMonthModal();
   }
   if (
     revolutModal &&

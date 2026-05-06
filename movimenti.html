@@ -83,11 +83,16 @@
 
             <button id="apply-movimenti-filter" type="button">Applica</button>
             <button id="open-movement-modal" class="primary-action" type="button">+ Movimento</button>
+            <button id="open-update-month-toolbar" class="primary-action" type="button">
+              <i data-feather="refresh-cw" aria-hidden="true"></i>
+              Aggiorna mese
+            </button>
             <button id="open-revolut-modal" class="revolut-action" type="button">
               <i data-feather="credit-card" aria-hidden="true"></i>
               Revolut
             </button>
           </div>
+          <div id="movimenti-page-message" class="movimenti-page-message" aria-live="polite"></div>
 
           <div id="movimenti-table" class="output-container movimenti-output">Caricamento movimenti...</div>
         </section>
@@ -153,8 +158,40 @@
           <div id="movement-modal-error" class="modal-error" aria-live="polite"></div>
 
           <div class="modal-actions">
+            <button id="open-update-month-modal" class="secondary-action modal-action-left" type="button">Aggiorna mese</button>
             <button id="cancel-movement-modal" class="secondary-action" type="button">Annulla</button>
             <button id="save-movement-placeholder" class="primary-action" type="button">Salva movimento</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <div id="update-month-modal" class="modal-overlay" aria-hidden="true">
+      <div class="modal-card update-month-modal-card" role="dialog" aria-modal="true" aria-labelledby="update-month-modal-title">
+        <div class="modal-header">
+          <div>
+            <h2 id="update-month-modal-title">Aggiorna mese</h2>
+            <p>Calcolo patrimonio mensile</p>
+          </div>
+          <button id="close-update-month-modal" class="modal-close" type="button" aria-label="Chiudi">×</button>
+        </div>
+
+        <form class="movement-form">
+          <label>
+            <span>Mese</span>
+            <input id="update-month-input" type="month" name="update-month">
+          </label>
+
+          <label>
+            <span>Nota opzionale</span>
+            <textarea id="update-month-note" name="update-month-note" rows="3" placeholder="Aggiungi una nota"></textarea>
+          </label>
+
+          <div id="update-month-error" class="modal-error" aria-live="polite"></div>
+
+          <div class="modal-actions">
+            <button id="cancel-update-month-modal" class="secondary-action" type="button">Annulla</button>
+            <button id="confirm-update-month" class="primary-action" type="button">Aggiorna</button>
           </div>
         </form>
       </div>
