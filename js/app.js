@@ -1,5 +1,9 @@
 const SUPABASE_URL = "https://xtztpxvnuzdmdodfsais.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_zonUWg9hhGsoKNFV9b4pZA_bg5nXGAJ";
+const ALLOWED_AUTH_EMAILS = new Set([
+  "drjackomo@gmail.com",
+  "giacomo.guglielmo@gmail.com",
+]);
 
 const statusElement = document.getElementById("connection-status");
 const loadButton = document.getElementById("load-transactions");
@@ -217,6 +221,7 @@ let dossierChartState = {
 const supabaseClient = hasCredentials && window.supabase
   ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
   : null;
+let authenticatedAppInitialized = false;
 
 async function loadNavbar() {
   if (!navbarRoot) return;
@@ -248,6 +253,306 @@ async function loadNavbar() {
   } catch (error) {
     console.error("Errore caricamento navbar:", error);
   }
+}
+
+function addAuthLogoutToNavbar(user) {
+  const topbarStatus = document.querySelector("#navbar-root .topbar-status");
+  if (!topbarStatus) return;
+
+  topbarStatus.innerHTML = "";
+  const userEmail = document.createElement("span");
+  const logoutButton = document.createElement("button");
+
+  userEmail.className = "auth-navbar-user";
+  userEmail.textContent = user?.email || "Account";
+  logoutButton.type = "button";
+  logoutButton.className = "auth-logout";
+  logoutButton.textContent = "Esci";
+  logoutButton.addEventListener("click", signOut);
+
+  topbarStatus.appendChild(userEmail);
+  topbarStatus.appendChild(logoutButton);
+}
+
+async function getCurrentUser() {
+  if (!supabaseClient?.auth) return null;
+
+  const { data: sessionData, error: sessionError } = await supabaseClient.auth.getSession();
+  if (sessionError) {
+    console.warn("[Auth] Impossibile leggere sessione corrente:", sessionError);
+    return null;
+  }
+  if (!sessionData?.session) return null;
+
+  const { data, error } = await supabaseClient.auth.getUser();
+  if (error) {
+    console.warn("[Auth] Impossibile leggere utente corrente:", error);
+    return null;
+  }
+
+  return data?.user || null;
+}
+
+function isAllowedUser(user) {
+  const email = String(user?.email || "").trim().toLowerCase();
+  return Boolean(email && ALLOWED_AUTH_EMAILS.has(email));
+}
+
+async function signInWithGoogle() {
+  if (!supabaseClient?.auth) {
+    renderAuthGate("Credenziali Supabase mancanti o client non disponibile.");
+    return;
+  }
+
+  const { error } = await supabaseClient.auth.signInWithOAuth({
+    provider: "google",
+    options: {
+      redirectTo: window.location.origin + window.location.pathname,
+    },
+  });
+
+  if (error) {
+    renderAuthGate(`Errore login Google: ${error.message || error}`);
+  }
+}
+
+async function signOut() {
+  if (supabaseClient?.auth) {
+    const { error } = await supabaseClient.auth.signOut();
+    if (error) console.warn("[Auth] Errore logout:", error);
+  }
+
+  authenticatedAppInitialized = false;
+  renderAuthGate();
+}
+
+function renderAuthGate(message, user = null) {
+  document.body.classList.add("is-auth-gated");
+  document.getElementById("auth-gate")?.remove();
+
+  const gate = document.createElement("main");
+  const card = document.createElement("section");
+  const brand = document.createElement("div");
+  const logo = document.createElement("img");
+  const title = document.createElement("h1");
+  const subtitle = document.createElement("p");
+  const eyebrow = document.createElement("p");
+  const eyebrowIcon = document.createElement("span");
+  const eyebrowText = document.createElement("span");
+
+  gate.id = "auth-gate";
+  gate.className = "auth-gate";
+  card.className = "auth-card";
+  brand.className = "auth-brand";
+  logo.className = "auth-logo";
+  logo.src = "assets/favicon.svg";
+  logo.alt = "";
+  title.className = "auth-title";
+  subtitle.className = "auth-subtitle";
+  eyebrow.className = "auth-eyebrow";
+  eyebrowIcon.className = "auth-eyebrow-icon";
+  eyebrowIcon.setAttribute("aria-hidden", "true");
+  eyebrowIcon.innerHTML = `
+    <svg viewBox="0 0 24 24" focusable="false">
+      <path d="M7 10V8a5 5 0 0 1 10 0v2"></path>
+      <rect x="5" y="10" width="14" height="10" rx="2"></rect>
+      <path d="M12 14v2"></path>
+    </svg>
+  `;
+  eyebrowText.textContent = user ? "Account non autorizzato" : "Accesso riservato agli account autorizzati";
+  title.textContent = "Personal Economy";
+  subtitle.textContent = user
+    ? "L'account Google usato non e abilitato ad accedere a questa applicazione."
+    : "La tua piattaforma personale per patrimonio, movimenti e investimenti.";
+  eyebrow.appendChild(eyebrowIcon);
+  eyebrow.appendChild(eyebrowText);
+
+  brand.appendChild(logo);
+  card.appendChild(brand);
+  card.appendChild(title);
+  card.appendChild(subtitle);
+  card.appendChild(eyebrow);
+
+  if (user?.email) {
+    const userElement = document.createElement("div");
+    userElement.className = "auth-user";
+    userElement.textContent = user.email;
+    card.appendChild(userElement);
+  }
+
+  if (message) {
+    const errorElement = document.createElement("div");
+    errorElement.className = "auth-error";
+    errorElement.textContent = message;
+    card.appendChild(errorElement);
+  }
+
+  const actionButton = document.createElement("button");
+  actionButton.type = "button";
+  actionButton.className = user ? "auth-logout" : "auth-button";
+  if (user) {
+    actionButton.textContent = "Esci e cambia account";
+  } else {
+    const googleIcon = document.createElement("span");
+    const buttonText = document.createElement("span");
+    googleIcon.className = "auth-google-icon";
+    googleIcon.setAttribute("aria-hidden", "true");
+    googleIcon.innerHTML = `
+      <svg viewBox="0 0 24 24" focusable="false">
+        <path fill="#4285f4" d="M22.6 12.2c0-.8-.1-1.5-.2-2.2H12v4.2h5.9c-.3 1.3-1 2.4-2.1 3.1v2.6h3.4c2-1.8 3.4-4.5 3.4-7.7z"></path>
+        <path fill="#34a853" d="M12 23c3 0 5.5-1 7.3-2.7l-3.4-2.6c-.9.6-2.2 1-3.9 1-3 0-5.5-2-6.4-4.7H2.1v2.7C3.9 20.4 7.7 23 12 23z"></path>
+        <path fill="#fbbc05" d="M5.6 14c-.2-.6-.4-1.3-.4-2s.1-1.4.4-2V7.3H2.1C1.4 8.7 1 10.3 1 12s.4 3.3 1.1 4.7L5.6 14z"></path>
+        <path fill="#ea4335" d="M12 5.3c1.6 0 3.1.6 4.2 1.7l3.1-3.1C17.5 2.1 15 1 12 1 7.7 1 3.9 3.6 2.1 7.3L5.6 10c.9-2.7 3.4-4.7 6.4-4.7z"></path>
+      </svg>
+    `;
+    buttonText.textContent = "Continua con Google";
+    actionButton.appendChild(googleIcon);
+    actionButton.appendChild(buttonText);
+  }
+  actionButton.addEventListener("click", user ? signOut : signInWithGoogle);
+  card.appendChild(actionButton);
+
+  if (!user) {
+    const microcopy = document.createElement("p");
+    microcopy.className = "auth-microcopy";
+    microcopy.textContent = "Accesso sicuro tramite Google. I tuoi dati restano privati.";
+    card.appendChild(microcopy);
+  }
+
+  gate.appendChild(card);
+  document.body.appendChild(gate);
+}
+
+function removeAuthGate() {
+  document.body.classList.remove("is-auth-gated");
+  document.getElementById("auth-gate")?.remove();
+}
+
+async function initAuthenticatedApp(user) {
+  if (authenticatedAppInitialized) return;
+  authenticatedAppInitialized = true;
+
+  await loadNavbar();
+  addAuthLogoutToNavbar(user);
+
+  if (loadButton && statusElement && outputElement) {
+    if (hasCredentials) {
+      setStatus("Pronto per leggere da Supabase", "ok");
+    } else {
+      setStatus("Credenziali da configurare", "warning");
+    }
+
+    loadButton.addEventListener("click", loadTransactions);
+  }
+
+  if (dashboardCardsRoot) {
+    loadDashboard();
+  }
+
+  if (wealthTrendCanvas) {
+    initPatrimonyControls();
+    loadDashboardWealthTrend();
+  }
+
+  if (investmentsCanvas) {
+    initInvestmentsControls();
+    loadInvestmentsPerformanceChart();
+  }
+
+  if (titoliInsertRoot && titoliSnapshotDateInput && titoliWeekPicker) {
+    initTitoliInsertPage();
+  }
+
+  if (titoliPageRoot) {
+    initTitoliPage();
+  }
+
+  if (dossierPageRoot) {
+    initDossierPage();
+  }
+
+  if (movimentiTableElement && movimentiMonthSelect && movimentiYearSelect && applyMovimentiFilterButton) {
+    initMovimentiFilters();
+    if (
+      movementModal &&
+      movementModalTitle &&
+      openMovementModalButton &&
+      closeMovementModalButton &&
+      cancelMovementModalButton &&
+      saveMovementPlaceholderButton &&
+      movementDateInput &&
+      movementDescriptionInput &&
+      movementAmountInput &&
+      movementTypeSwitch &&
+      movementInTotalsSwitch &&
+      currentBalancePreview &&
+      nextBalancePreview &&
+      movementModalError
+    ) {
+      initMovementModal();
+    }
+    if (
+      updateMonthModal &&
+      (openUpdateMonthToolbarButton || openUpdateMonthModalButton) &&
+      closeUpdateMonthModalButton &&
+      cancelUpdateMonthModalButton &&
+      confirmUpdateMonthButton &&
+      updateMonthInput &&
+      updateMonthNoteInput &&
+      updateMonthError
+    ) {
+      initUpdateMonthModal();
+    }
+    if (
+      revolutModal &&
+      openRevolutModalButton &&
+      closeRevolutModalButton &&
+      cancelRevolutModalButton &&
+      saveRevolutPlaceholderButton &&
+      revolutPersonalInput &&
+      revolutSharedInput &&
+      revolutNoteInput &&
+      lastRevolutPersonalElement &&
+      lastRevolutSharedElement &&
+      lastRevolutUpdatedElement
+    ) {
+      initRevolutModal();
+    }
+    if (window.feather) {
+      window.feather.replace();
+    }
+    if (
+      deleteMovementModal &&
+      cancelDeleteMovementButton &&
+      confirmDeleteMovementButton &&
+      deleteMovementModalError
+    ) {
+      initDeleteMovementModal();
+    }
+    applyMovimentiFilterButton.addEventListener("click", loadMovimenti);
+    loadMovimenti();
+  }
+}
+
+async function initAuthGate() {
+  if (!supabaseClient?.auth) {
+    renderAuthGate("Credenziali Supabase mancanti o client Supabase non disponibile.");
+    return;
+  }
+
+  const user = await getCurrentUser();
+  if (!user) {
+    renderAuthGate();
+    return;
+  }
+
+  if (!isAllowedUser(user)) {
+    renderAuthGate("Account non autorizzato", user);
+    return;
+  }
+
+  removeAuthGate();
+  await initAuthenticatedApp(user);
 }
 
 function setStatus(message, type) {
@@ -7307,102 +7612,4 @@ async function loadMovimenti() {
   }
 }
 
-if (loadButton && statusElement && outputElement) {
-  if (hasCredentials) {
-    setStatus("Pronto per leggere da Supabase", "ok");
-  } else {
-    setStatus("Credenziali da configurare", "warning");
-  }
-
-  loadButton.addEventListener("click", loadTransactions);
-}
-
-loadNavbar();
-
-if (dashboardCardsRoot) {
-  loadDashboard();
-}
-
-if (wealthTrendCanvas) {
-  initPatrimonyControls();
-  loadDashboardWealthTrend();
-}
-
-if (investmentsCanvas) {
-  initInvestmentsControls();
-  loadInvestmentsPerformanceChart();
-}
-
-if (titoliInsertRoot && titoliSnapshotDateInput && titoliWeekPicker) {
-  initTitoliInsertPage();
-}
-
-if (titoliPageRoot) {
-  initTitoliPage();
-}
-
-if (dossierPageRoot) {
-  initDossierPage();
-}
-
-if (movimentiTableElement && movimentiMonthSelect && movimentiYearSelect && applyMovimentiFilterButton) {
-  initMovimentiFilters();
-  if (
-    movementModal &&
-    movementModalTitle &&
-    openMovementModalButton &&
-    closeMovementModalButton &&
-    cancelMovementModalButton &&
-    saveMovementPlaceholderButton &&
-    movementDateInput &&
-    movementDescriptionInput &&
-    movementAmountInput &&
-    movementTypeSwitch &&
-    movementInTotalsSwitch &&
-    currentBalancePreview &&
-    nextBalancePreview &&
-    movementModalError
-  ) {
-    initMovementModal();
-  }
-  if (
-    updateMonthModal &&
-    (openUpdateMonthToolbarButton || openUpdateMonthModalButton) &&
-    closeUpdateMonthModalButton &&
-    cancelUpdateMonthModalButton &&
-    confirmUpdateMonthButton &&
-    updateMonthInput &&
-    updateMonthNoteInput &&
-    updateMonthError
-  ) {
-    initUpdateMonthModal();
-  }
-  if (
-    revolutModal &&
-    openRevolutModalButton &&
-    closeRevolutModalButton &&
-    cancelRevolutModalButton &&
-    saveRevolutPlaceholderButton &&
-    revolutPersonalInput &&
-    revolutSharedInput &&
-    revolutNoteInput &&
-    lastRevolutPersonalElement &&
-    lastRevolutSharedElement &&
-    lastRevolutUpdatedElement
-  ) {
-    initRevolutModal();
-  }
-  if (window.feather) {
-    window.feather.replace();
-  }
-  if (
-    deleteMovementModal &&
-    cancelDeleteMovementButton &&
-    confirmDeleteMovementButton &&
-    deleteMovementModalError
-  ) {
-    initDeleteMovementModal();
-  }
-  applyMovimentiFilterButton.addEventListener("click", loadMovimenti);
-  loadMovimenti();
-}
+initAuthGate();
