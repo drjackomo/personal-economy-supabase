@@ -6,16 +6,241 @@
     <title>Titoli - Personal Economy</title>
     <link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
     <link rel="stylesheet" href="css/styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="js/app.js" defer></script>
   </head>
   <body>
     <div id="navbar-root"></div>
 
-    <main class="app">
-      <section class="panel">
-        <div class="section-heading">
-          <h1>Titoli</h1>
-          <p class="subtitle">Pagina in costruzione.</p>
+    <main id="titoli-page" class="app dashboard-page titoli-page">
+      <div class="dashboard-heading">
+        <h1>Titoli</h1>
+      </div>
+
+      <section class="dashboard-chart-section chart-wrap" aria-labelledby="titoli-chart-title">
+        <div class="dashboard-chart-header chart-card-title">
+          <div>
+            <h2 id="titoli-chart-title" class="chart-title">Andamento titoli</h2>
+            <div id="titoli-chart-subtitle" class="chart-subtitle">1 serie selezionate · —</div>
+            <div class="chart-filters titoli-chart-filters" id="titoli-chart-filters">
+              <select class="chart-input" id="titoli-chart-preset" aria-label="Periodo grafico titoli">
+                <option value="all">Tutto</option>
+                <option value="last3" selected>Ultimi 3 mesi</option>
+                <option value="last6">Ultimi 6 mesi</option>
+                <option value="last12">Ultimo anno</option>
+              </select>
+              <div class="dossier-series-menu titoli-series-menu">
+                <button type="button" class="chart-btn ghost dossier-series-toggle titoli-series-toggle" id="titoli-series-toggle" aria-expanded="false" aria-controls="titoli-series-panel">Serie (1)</button>
+                <aside class="dossier-series-panel is-hidden titoli-series-panel" id="titoli-series-panel" aria-labelledby="titoli-series-title" aria-hidden="true">
+                  <div class="dossier-series-header">
+                    <h3 id="titoli-series-title">Serie</h3>
+                    <div class="dossier-series-actions">
+                      <button type="button" class="chart-btn ghost" id="titoli-series-all">Tutte</button>
+                      <button type="button" class="chart-btn ghost" id="titoli-series-none">Nessuna</button>
+                      <button type="button" class="chart-btn ghost" id="titoli-series-close">Chiudi</button>
+                    </div>
+                  </div>
+                  <input id="titoli-series-search" class="chart-input" type="search" placeholder="Digita per effettuare la ricerca" aria-label="Cerca serie titoli">
+                  <div id="titoli-series-list" class="dossier-series-list titoli-series-list">
+                    <div class="dossier-series-empty">Nessuna serie caricata.</div>
+                  </div>
+                </aside>
+              </div>
+              <label class="chart-filter">
+                <span>Da</span>
+                <input type="month" class="chart-input" id="titoli-chart-from" aria-label="Da mese grafico titoli">
+              </label>
+              <label class="chart-filter">
+                <span>A</span>
+                <input type="month" class="chart-input" id="titoli-chart-to" aria-label="A mese grafico titoli">
+              </label>
+              <button type="button" class="chart-btn" id="titoli-chart-apply">Applica</button>
+              <button type="button" class="chart-btn ghost" id="titoli-chart-cancel">Annulla</button>
+            </div>
+          </div>
+          <div class="chart-header-right">
+            <div class="chart-range" id="titoli-chart-range">— linee · — punti</div>
+            <div class="chart-toggle" id="titoli-chart-toggle" role="tablist" aria-label="Vista titoli">
+              <button type="button" class="chart-toggle-btn is-active" id="titoli-chart-mode-month" data-titoli-mode="month">Mese</button>
+              <button type="button" class="chart-toggle-btn" id="titoli-chart-mode-year" data-titoli-mode="year">Anno</button>
+            </div>
+          </div>
+        </div>
+
+        <div id="titoli-chart-state" class="dashboard-chart-state is-visible" aria-live="polite">Dati non ancora caricati.</div>
+        <div class="dashboard-chart-frame titoli-chart-frame">
+          <canvas id="titoli-chart-canvas" class="dashboard-chart-canvas chart-canvas" height="300"></canvas>
+        </div>
+      </section>
+
+      <section class="titoli-history-section" aria-label="Storico titoli">
+        <div id="titoli-history-cards" class="titoli-history-cards">
+          <article class="dashboard-chart-section dossier-detail-card titoli-history-card">
+            <div class="titoli-history-title">JACK ADV+</div>
+            <div class="titoli-history-toolbar">
+              <div class="titoli-history-filters">
+                <select class="chart-input" aria-label="Periodo JACK ADV+">
+                  <option>Mese</option>
+                  <option>Ultimi 3 mesi</option>
+                  <option>Ultimi 6 mesi</option>
+                  <option>Ultimi 12 mesi</option>
+                  <option>Anno intero</option>
+                </select>
+                <select class="chart-input" aria-label="Anno JACK ADV+">
+                  <option>Anno</option>
+                </select>
+                <select class="chart-input" aria-label="Mese JACK ADV+">
+                  <option>Mese</option>
+                </select>
+              </div>
+              <select class="chart-input titoli-history-title-select" aria-label="Titolo JACK ADV+">
+                <option>Titolo</option>
+              </select>
+            </div>
+            <div class="dossier-table-wrap titoli-history-table-wrap">
+              <table class="transactions-table dossier-table titoli-history-table">
+                <thead>
+                  <tr>
+                    <th>Data</th>
+                    <th class="num">Carico</th>
+                    <th class="num">Totale</th>
+                    <th class="num">Δ vs Carico</th>
+                    <th class="num">% vs Carico</th>
+                    <th class="num">Δ vs Prec</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td colspan="6" class="titoli-history-empty">Dati non ancora caricati.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </article>
+
+          <article class="dashboard-chart-section dossier-detail-card titoli-history-card">
+            <div class="titoli-history-title">JACK MAIN</div>
+            <div class="titoli-history-toolbar">
+              <div class="titoli-history-filters">
+                <select class="chart-input" aria-label="Periodo JACK MAIN">
+                  <option>Mese</option>
+                  <option>Ultimi 3 mesi</option>
+                  <option>Ultimi 6 mesi</option>
+                  <option>Ultimi 12 mesi</option>
+                  <option>Anno intero</option>
+                </select>
+                <select class="chart-input" aria-label="Anno JACK MAIN">
+                  <option>Anno</option>
+                </select>
+                <select class="chart-input" aria-label="Mese JACK MAIN">
+                  <option>Mese</option>
+                </select>
+              </div>
+              <select class="chart-input titoli-history-title-select" aria-label="Titolo JACK MAIN">
+                <option>Titolo</option>
+              </select>
+            </div>
+            <div class="dossier-table-wrap titoli-history-table-wrap">
+              <table class="transactions-table dossier-table titoli-history-table">
+                <thead>
+                  <tr>
+                    <th>Data</th>
+                    <th class="num">Carico</th>
+                    <th class="num">Totale</th>
+                    <th class="num">Δ vs Carico</th>
+                    <th class="num">% vs Carico</th>
+                    <th class="num">Δ vs Prec</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td colspan="6" class="titoli-history-empty">Dati non ancora caricati.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </article>
+
+          <article class="dashboard-chart-section dossier-detail-card titoli-history-card">
+            <div class="titoli-history-title">SIMONE</div>
+            <div class="titoli-history-toolbar">
+              <div class="titoli-history-filters">
+                <select class="chart-input" aria-label="Periodo SIMONE">
+                  <option>Mese</option>
+                  <option>Ultimi 3 mesi</option>
+                  <option>Ultimi 6 mesi</option>
+                  <option>Ultimi 12 mesi</option>
+                  <option>Anno intero</option>
+                </select>
+                <select class="chart-input" aria-label="Anno SIMONE">
+                  <option>Anno</option>
+                </select>
+                <select class="chart-input" aria-label="Mese SIMONE">
+                  <option>Mese</option>
+                </select>
+              </div>
+            </div>
+            <div class="dossier-table-wrap titoli-history-table-wrap">
+              <table class="transactions-table dossier-table titoli-history-table">
+                <thead>
+                  <tr>
+                    <th>Data</th>
+                    <th class="num">Carico</th>
+                    <th class="num">Totale</th>
+                    <th class="num">Δ vs Carico</th>
+                    <th class="num">% vs Carico</th>
+                    <th class="num">Δ vs Prec</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td colspan="6" class="titoli-history-empty">Dati non ancora caricati.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </article>
+
+          <article class="dashboard-chart-section dossier-detail-card titoli-history-card">
+            <div class="titoli-history-title">ERICA</div>
+            <div class="titoli-history-toolbar">
+              <div class="titoli-history-filters">
+                <select class="chart-input" aria-label="Periodo ERICA">
+                  <option>Mese</option>
+                  <option>Ultimi 3 mesi</option>
+                  <option>Ultimi 6 mesi</option>
+                  <option>Ultimi 12 mesi</option>
+                  <option>Anno intero</option>
+                </select>
+                <select class="chart-input" aria-label="Anno ERICA">
+                  <option>Anno</option>
+                </select>
+                <select class="chart-input" aria-label="Mese ERICA">
+                  <option>Mese</option>
+                </select>
+              </div>
+            </div>
+            <div class="dossier-table-wrap titoli-history-table-wrap">
+              <table class="transactions-table dossier-table titoli-history-table">
+                <thead>
+                  <tr>
+                    <th>Data</th>
+                    <th class="num">Carico</th>
+                    <th class="num">Totale</th>
+                    <th class="num">Δ vs Carico</th>
+                    <th class="num">% vs Carico</th>
+                    <th class="num">Δ vs Prec</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td colspan="6" class="titoli-history-empty">Dati non ancora caricati.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </article>
+          <div id="titoli-history-state" class="dashboard-chart-state is-visible" aria-live="polite">Dati non ancora caricati.</div>
         </div>
       </section>
     </main>

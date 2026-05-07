@@ -56,6 +56,25 @@ const deleteMovementModalError = document.getElementById("delete-movement-modal-
 const titoliInsertRoot = document.getElementById("titoli-insert-root");
 const titoliSnapshotDateInput = document.getElementById("titoli-snapshot-date");
 const titoliWeekPicker = document.getElementById("titoli-week-picker");
+const titoliPageRoot = document.getElementById("titoli-page");
+const titoliChartStateElement = document.getElementById("titoli-chart-state");
+const titoliChartSubtitle = document.getElementById("titoli-chart-subtitle");
+const titoliChartRangeElement = document.getElementById("titoli-chart-range");
+const titoliChartCanvas = document.getElementById("titoli-chart-canvas");
+const titoliChartPresetSelect = document.getElementById("titoli-chart-preset");
+const titoliChartFromInput = document.getElementById("titoli-chart-from");
+const titoliChartToInput = document.getElementById("titoli-chart-to");
+const titoliChartApplyButton = document.getElementById("titoli-chart-apply");
+const titoliChartCancelButton = document.getElementById("titoli-chart-cancel");
+const titoliChartToggle = document.getElementById("titoli-chart-toggle");
+const titoliSeriesToggleButton = document.getElementById("titoli-series-toggle");
+const titoliSeriesPanel = document.getElementById("titoli-series-panel");
+const titoliSeriesSearchInput = document.getElementById("titoli-series-search");
+const titoliSeriesAllButton = document.getElementById("titoli-series-all");
+const titoliSeriesNoneButton = document.getElementById("titoli-series-none");
+const titoliSeriesCloseButton = document.getElementById("titoli-series-close");
+const titoliSeriesList = document.getElementById("titoli-series-list");
+const titoliHistoryStateElement = document.getElementById("titoli-history-state");
 const dashboardCardsRoot = document.getElementById("dashboard-cards");
 const dashboardErrorElement = document.getElementById("dashboard-error");
 const wealthTrendCanvas = document.getElementById("wealth-trend-chart");
@@ -121,6 +140,39 @@ let modalMode = "create";
 let editingTxId = null;
 let pendingDeleteTxId = null;
 let titoliSelectedDate = new Date();
+let titoliState = {
+  mode: "month",
+  range: {
+    start: "",
+    end: "",
+    preset: "last3",
+  },
+  seriesSearch: "",
+  seriesPanelOpen: false,
+  seriesVisibility: {},
+  raw: {
+    dossiers: [],
+    assets: [],
+    snapshots: [],
+    basisEvents: [],
+  },
+  normalized: {
+    dossiers: [],
+    seriesByDossier: new Map(),
+    allSeries: [],
+    minDate: "",
+    maxDate: "",
+    basisAvailable: false,
+    columns: {},
+  },
+  chartMeta: {
+    minDate: "",
+    maxDate: "",
+    pointCount: 0,
+  },
+  historySelections: {},
+};
+let titoliChart = null;
 let wealthTrendSeries = [];
 let wealthTrendChart = null;
 let investmentsSeries = [];
@@ -4803,6 +4855,959 @@ function initTitoliInsertPage() {
   loadTitoliInsertReadOnly();
 }
 
+function setTitoliChartState(message, type = "info") {
+  if (!titoliChartStateElement) return;
+
+  titoliChartStateElement.textContent = message || "";
+  titoliChartStateElement.className = `dashboard-chart-state ${message ? "is-visible" : ""} ${type ? `is-${type}` : ""}`;
+}
+
+function syncTitoliModeButtons() {
+  if (!titoliChartToggle) return;
+
+  titoliChartToggle.querySelectorAll("[data-titoli-mode]").forEach((button) => {
+    button.classList.toggle("is-active", button.dataset.titoliMode === titoliState.mode);
+  });
+}
+
+function syncTitoliSeriesPanel() {
+  if (titoliSeriesPanel) {
+    titoliSeriesPanel.classList.toggle("is-hidden", !titoliState.seriesPanelOpen);
+    titoliSeriesPanel.setAttribute("aria-hidden", titoliState.seriesPanelOpen ? "false" : "true");
+  }
+
+  if (titoliSeriesToggleButton) {
+    titoliSeriesToggleButton.classList.toggle("is-active", titoliState.seriesPanelOpen);
+    titoliSeriesToggleButton.setAttribute("aria-expanded", titoliState.seriesPanelOpen ? "true" : "false");
+  }
+}
+
+function syncTitoliPageControls() {
+  syncTitoliModeButtons();
+  syncTitoliSeriesPanel();
+
+  const availableSeries = getVisibleTitoliSeries().length;
+  const minDate = titoliState.chartMeta?.minDate || titoliState.normalized?.minDate || "";
+  const maxDate = titoliState.chartMeta?.maxDate || titoliState.normalized?.maxDate || "";
+  const rangeLabel = minDate && maxDate ? `${formatTitoliDisplayDate(minDate)} - ${formatTitoliDisplayDate(maxDate)}` : "—";
+
+  if (titoliChartSubtitle) titoliChartSubtitle.textContent = `${availableSeries || 0} serie selezionate · ${rangeLabel}`;
+  if (titoliChartRangeElement) {
+    const pointCount = titoliState.chartMeta?.pointCount || 0;
+    titoliChartRangeElement.textContent = availableSeries ? `${availableSeries} linee · ${pointCount} punti` : "— linee · — punti";
+  }
+  if (titoliChartPresetSelect) {
+    const wantedPreset = titoliState.range.preset || "last3";
+    const hasPreset = Array.from(titoliChartPresetSelect.options || []).some((option) => option.value === wantedPreset);
+    titoliChartPresetSelect.value = hasPreset ? wantedPreset : "all";
+  }
+  if (titoliChartFromInput) titoliChartFromInput.value = titoliState.range.start ? titoliState.range.start.slice(0, 7) : "";
+  if (titoliChartToInput) titoliChartToInput.value = titoliState.range.end ? titoliState.range.end.slice(0, 7) : "";
+  if (titoliSeriesSearchInput) titoliSeriesSearchInput.value = titoliState.seriesSearch || "";
+  if (titoliSeriesList && !titoliSeriesList.children.length) {
+    titoliSeriesList.innerHTML = '<div class="dossier-series-empty">Nessuna serie caricata.</div>';
+  }
+}
+
+function normalizeTitoliId(value) {
+  return String(value || "").trim().toUpperCase();
+}
+
+function getTitoliBasisDate(event) {
+  return normalizeDashboardISODate(getFirstDefined(event, ["effective_date", "date", "data"], ""));
+}
+
+function getTitoliBasisDossierId(event) {
+  return normalizeTitoliId(getFirstDefined(event, ["dossier_id", "account_id", "dossier", "account"], ""));
+}
+
+function getTitoliBasisIsin(event) {
+  return normalizeTitoliId(getFirstDefined(event, ["isin"], ""));
+}
+
+function getTitoliBasisAmount(event) {
+  return parseTitoliValue(getFirstDefined(event, ["cost_basis", "amount", "value", "importo", "market_value"], null));
+}
+
+function getTitoliSeriesKey(dossierId, isin) {
+  return `${normalizeTitoliId(dossierId)}|${normalizeTitoliId(isin)}`;
+}
+
+function formatTitoliDisplayDate(value) {
+  const normalized = normalizeDashboardISODate(value);
+  return normalized ? formatDashboardDate(normalized) : "—";
+}
+
+function formatTitoliEuroDisplay(value, signed = false) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return "—";
+
+  const formatted = new Intl.NumberFormat("it-IT", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+    useGrouping: true,
+  }).format(Math.abs(number));
+
+  if (!signed) return `${formatted} €`;
+  if (number === 0) return `0,00 €`;
+  return `${number > 0 ? "+" : "-"}${formatted} €`;
+}
+
+function formatTitoliPercentDisplay(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return "—";
+
+  const formatted = new Intl.NumberFormat("it-IT", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(Math.abs(number));
+
+  if (number === 0) return "0,00%";
+  return `${number > 0 ? "+" : "-"}${formatted}%`;
+}
+
+function getTitoliValueClass(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number === 0) return "value-neutral";
+  return number > 0 ? "value-positive" : "value-negative";
+}
+
+function formatTitoliPercentAxis(value) {
+  return formatDashboardPctAxis(value);
+}
+
+function formatTitoliPercentTooltip(value) {
+  return formatDashboardPctValue(value);
+}
+
+function escapeTitoliHtml(value) {
+  return String(value || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function getTitoliMonthName(dateIso) {
+  const date = parseDashboardISODate(dateIso);
+  if (!date) return "";
+  const label = date.toLocaleDateString("it-IT", { month: "long", year: "numeric" });
+  return label.charAt(0).toUpperCase() + label.slice(1);
+}
+
+function buildTitoliBasisMap(basisEvents) {
+  const basisMap = new Map();
+
+  (basisEvents || []).forEach((event) => {
+    const dateIso = getTitoliBasisDate(event);
+    const dossierId = getTitoliBasisDossierId(event);
+    const isin = getTitoliBasisIsin(event);
+    const amount = getTitoliBasisAmount(event);
+    if (!dateIso || !dossierId || !isin || amount === null) return;
+
+    const key = getTitoliSeriesKey(dossierId, isin);
+    if (!basisMap.has(key)) basisMap.set(key, []);
+    basisMap.get(key).push({ dateIso, amount });
+  });
+
+  basisMap.forEach((events) => {
+    events.sort((first, second) => first.dateIso.localeCompare(second.dateIso));
+  });
+
+  return basisMap;
+}
+
+function computeTitoliBasisAtDate(basisMap, seriesKey, snapshotDate) {
+  const events = basisMap.get(seriesKey) || [];
+  let basis = null;
+
+  events.forEach((event) => {
+    if (event.dateIso <= snapshotDate) basis = event.amount;
+  });
+
+  return basis;
+}
+
+function normalizeTitoliData({ dossiers, assets, snapshots, basisEvents, basisAvailable }) {
+  const activeDossiers = (dossiers || [])
+    .filter(isTitoliDossierActive)
+    .sort(sortTitoliDossiers)
+    .map((dossier) => ({
+      id: normalizeTitoliId(getTitoliDossierId(dossier)),
+      label: getTitoliDossierLabel(dossier),
+      order: getTitoliDossierOrder(dossier),
+      raw: dossier,
+    }))
+    .filter((dossier) => dossier.id);
+
+  const dossierById = new Map(activeDossiers.map((dossier) => [dossier.id, dossier]));
+  const assetMetaByKey = new Map();
+
+  (assets || []).forEach((asset) => {
+    const dossierId = normalizeTitoliId(getTitoliAssetDossierId(asset));
+    const isin = normalizeTitoliId(getTitoliAssetIsin(asset));
+    if (!dossierId || !isin) return;
+
+    assetMetaByKey.set(getTitoliSeriesKey(dossierId, isin), {
+      name: getTitoliAssetName(asset),
+      isClosed: getFirstDefined(asset, ["is_closed"], false) === true,
+      visible: getFirstDefined(asset, ["visible"], true) !== false,
+    });
+  });
+
+  const basisMap = buildTitoliBasisMap(basisEvents);
+  const seriesByKey = new Map();
+  let minDate = "";
+  let maxDate = "";
+
+  (snapshots || []).forEach((snapshot) => {
+    const dateIso = normalizeDashboardISODate(getTitoliSnapshotDate(snapshot));
+    const dossierId = normalizeTitoliId(getTitoliSnapshotDossierId(snapshot));
+    const isin = normalizeTitoliId(getTitoliSnapshotIsin(snapshot));
+    const value = parseTitoliValue(getTitoliSnapshotValue(snapshot));
+    if (!dateIso || !dossierId || !isin || value === null) return;
+    if (dossierById.size && !dossierById.has(dossierId)) return;
+
+    const key = getTitoliSeriesKey(dossierId, isin);
+    const assetMeta = assetMetaByKey.get(key);
+    const snapshotName = String(getFirstDefined(snapshot, ["asset_name", "name", "titolo"], "") || "").trim();
+    const name = snapshotName || assetMeta?.name || isin;
+
+    if (!seriesByKey.has(key)) {
+      seriesByKey.set(key, {
+        key,
+        dossierId,
+        dossierLabel: dossierById.get(dossierId)?.label || dossierId,
+        isin,
+        name,
+        rows: [],
+        visible: assetMeta ? assetMeta.visible : true,
+        isClosed: assetMeta?.isClosed === true,
+      });
+    }
+
+    const series = seriesByKey.get(key);
+    if (snapshotName) series.name = snapshotName;
+    series.rows.push({ dateIso, value });
+
+    minDate = !minDate || dateIso < minDate ? dateIso : minDate;
+    maxDate = !maxDate || dateIso > maxDate ? dateIso : maxDate;
+  });
+
+  const allSeries = Array.from(seriesByKey.values())
+    .map((series) => {
+      series.rows.sort((first, second) => first.dateIso.localeCompare(second.dateIso));
+      let previousValue = null;
+      let previousBasis = null;
+
+      series.rows = series.rows.map((row) => {
+        const basis = computeTitoliBasisAtDate(basisMap, series.key, row.dateIso);
+        const deltaBasis = Number.isFinite(basis) ? row.value - basis : NaN;
+        const pctBasis = Number.isFinite(basis) && basis > 0 ? (deltaBasis / basis) * 100 : NaN;
+        const deltaPrev = Number.isFinite(previousValue) ? row.value - previousValue : NaN;
+        const basisChanged = Number.isFinite(previousBasis) && Number.isFinite(basis) && basis !== previousBasis;
+        previousValue = row.value;
+        previousBasis = basis;
+
+        return {
+          ...row,
+          costBasis: Number.isFinite(basis) ? basis : NaN,
+          deltaBasis,
+          pctBasis,
+          pct: pctBasis,
+          deltaPrev,
+          basisChanged,
+        };
+      });
+
+      return series;
+    })
+    .sort((first, second) => {
+      const dossierDiff = (dossierById.get(first.dossierId)?.order ?? Number.MAX_SAFE_INTEGER) - (dossierById.get(second.dossierId)?.order ?? Number.MAX_SAFE_INTEGER);
+      if (dossierDiff !== 0) return dossierDiff;
+      return first.name.localeCompare(second.name, "it");
+    });
+
+  const seriesByDossier = new Map();
+  allSeries.forEach((series) => {
+    if (!seriesByDossier.has(series.dossierId)) seriesByDossier.set(series.dossierId, []);
+    seriesByDossier.get(series.dossierId).push(series);
+  });
+
+  return {
+    dossiers: activeDossiers.filter((dossier) => seriesByDossier.has(dossier.id)),
+    seriesByDossier,
+    allSeries,
+    minDate,
+    maxDate,
+    basisAvailable,
+    columns: {
+      snapshots: ["snapshot_date/date/data", "dossier_id/account_id", "isin", "asset_name", "market_value/value/total_value"],
+      assets: ["dossier_id/account_id", "isin", "asset_name/name", "visible", "is_closed"],
+      dossiers: ["account_id/dossier_id/id", "label/name", "order/ordine/sort_order"],
+      basis: ["effective_date/date/data", "dossier_id/account_id", "isin", "cost_basis/amount/value/importo"],
+    },
+  };
+}
+
+function getTitoliLatestYearMonth(series) {
+  const latest = (series?.rows || []).at(-1);
+  const dateIso = latest?.dateIso || titoliState.normalized?.maxDate || "";
+  return {
+    year: dateIso ? Number(dateIso.slice(0, 4)) : new Date().getFullYear(),
+    month: dateIso ? Number(dateIso.slice(5, 7)) : new Date().getMonth() + 1,
+  };
+}
+
+function filterTitoliHistoryRows(series, selection) {
+  const rowsAsc = series?.rows || [];
+  const period = selection.period || "month";
+  const year = Number(selection.year);
+  const month = Number(selection.month);
+
+  return rowsAsc
+    .filter((row) => {
+      const rowYear = Number(row.dateIso.slice(0, 4));
+      const rowMonth = Number(row.dateIso.slice(5, 7));
+      const rowMonthIndex = rowYear * 12 + rowMonth;
+      const endMonthIndex = year * 12 + month;
+
+      if (period === "year") return rowYear === year;
+      if (period === "last3") return rowMonthIndex <= endMonthIndex && rowMonthIndex > endMonthIndex - 3;
+      if (period === "last6") return rowMonthIndex <= endMonthIndex && rowMonthIndex > endMonthIndex - 6;
+      if (period === "last12") return rowMonthIndex <= endMonthIndex && rowMonthIndex > endMonthIndex - 12;
+      return rowYear === year && rowMonth === month;
+    })
+    .slice()
+    .reverse();
+}
+
+function getTitoliChartBounds() {
+  const dates = [];
+  (titoliState.normalized?.allSeries || []).forEach((series) => {
+    (series.rows || []).forEach((row) => {
+      if (Number.isFinite(row.pct)) dates.push(row.dateIso);
+    });
+  });
+
+  dates.sort();
+  return dates.length ? { min: dates[0], max: dates.at(-1) } : null;
+}
+
+function getTitoliMonthStart(monthValue) {
+  return monthValue ? `${monthValue}-01` : "";
+}
+
+function getTitoliMonthEnd(monthValue) {
+  if (!monthValue) return "";
+  const date = parseDashboardISODate(`${monthValue}-01`);
+  if (!date) return "";
+  return formatTitoliDateValue(new Date(date.getFullYear(), date.getMonth() + 1, 0));
+}
+
+function shiftTitoliMonth(dateIso, offset) {
+  const date = parseDashboardISODate(dateIso);
+  if (!date) return "";
+  return formatTitoliDateValue(new Date(date.getFullYear(), date.getMonth() + offset, 1));
+}
+
+function setTitoliChartRange(start, end, preset = "custom") {
+  titoliState.range = { start: start || "", end: end || "", preset };
+  syncTitoliPageControls();
+}
+
+function applyTitoliChartPreset(preset = "last3") {
+  const bounds = getTitoliChartBounds();
+  if (!bounds) {
+    titoliState.range.preset = preset;
+    syncTitoliPageControls();
+    refreshTitoliChart();
+    return;
+  }
+
+  let start = bounds.min;
+  const end = bounds.max;
+
+  if (preset === "last3") start = shiftTitoliMonth(end, -2);
+  else if (preset === "last6") start = shiftTitoliMonth(end, -5);
+  else if (preset === "last12") start = shiftTitoliMonth(end, -11);
+  else if (preset === "all") start = bounds.min;
+
+  setTitoliChartRange(start, end, preset);
+  refreshTitoliChart();
+}
+
+function getTitoliChartRange() {
+  const bounds = getTitoliChartBounds();
+  if (!bounds) return { start: "", end: "" };
+
+  return {
+    start: titoliState.range.start || bounds.min,
+    end: titoliState.range.end || bounds.max,
+  };
+}
+
+function getVisibleTitoliSeries() {
+  const allSeries = titoliState.normalized?.allSeries || [];
+  return allSeries.filter((series) => titoliState.seriesVisibility[series.key] !== false);
+}
+
+function syncTitoliSeriesVisibility() {
+  const next = {};
+  (titoliState.normalized?.allSeries || []).forEach((series) => {
+    next[series.key] = titoliState.seriesVisibility[series.key] !== false;
+  });
+  titoliState.seriesVisibility = next;
+}
+
+function buildTitoliChartPoints(series) {
+  const { start, end } = getTitoliChartRange();
+  const filteredRows = (series.rows || [])
+    .filter((row) => Number.isFinite(row.pct))
+    .filter((row) => (!start || row.dateIso >= start) && (!end || row.dateIso <= end));
+
+  if (titoliState.mode === "year") {
+    const byYear = new Map();
+    filteredRows.forEach((row) => {
+      const year = row.dateIso.slice(0, 4);
+      const current = byYear.get(year);
+      if (!current || row.dateIso > current.dateIso) byYear.set(year, row);
+    });
+    return Array.from(byYear.entries())
+      .sort((first, second) => first[0].localeCompare(second[0]))
+      .map(([year, row]) => ({ ...row, labelKey: year }));
+  }
+
+  return filteredRows.map((row) => ({ ...row, labelKey: row.dateIso }));
+}
+
+function buildTitoliChartModel() {
+  const labelsSet = new Set();
+  const seriesModels = [];
+  const visibleSeries = getVisibleTitoliSeries();
+  let minDate = "";
+  let maxDate = "";
+  let pointCount = 0;
+
+  visibleSeries.forEach((series) => {
+    const points = buildTitoliChartPoints(series);
+    if (!points.length) return;
+
+    const pointByLabel = new Map();
+    points.forEach((point) => {
+      labelsSet.add(point.labelKey);
+      pointByLabel.set(point.labelKey, point);
+      pointCount += 1;
+      minDate = !minDate || point.dateIso < minDate ? point.dateIso : minDate;
+      maxDate = !maxDate || point.dateIso > maxDate ? point.dateIso : maxDate;
+    });
+
+    seriesModels.push({
+      key: series.key,
+      name: series.name || series.isin,
+      dossierLabel: series.dossierLabel,
+      pointByLabel,
+    });
+  });
+
+  const labels = Array.from(labelsSet).sort((first, second) => first.localeCompare(second));
+  const chartSeries = seriesModels.map((series) => ({
+    key: series.key,
+    name: series.name,
+    dossierLabel: series.dossierLabel,
+    values: labels.map((label) => {
+      const point = series.pointByLabel.get(label);
+      return point ? point.pct : null;
+    }),
+    meta: labels.map((label) => series.pointByLabel.get(label) || null),
+    lineWidth: 2,
+    spanGaps: false,
+  }));
+
+  return { labels, series: chartSeries, minDate, maxDate, pointCount };
+}
+
+function clearTitoliChart() {
+  if (titoliChart) {
+    titoliChart.destroy();
+    titoliChart = null;
+  }
+
+  if (titoliChartCanvas) {
+    const context = titoliChartCanvas.getContext("2d");
+    if (context) context.clearRect(0, 0, titoliChartCanvas.width, titoliChartCanvas.height);
+  }
+}
+
+function refreshTitoliChart() {
+  if (!titoliChartCanvas) return;
+
+  const model = buildTitoliChartModel();
+  titoliState.chartMeta = {
+    minDate: model.minDate,
+    maxDate: model.maxDate,
+    pointCount: model.pointCount,
+  };
+
+  syncTitoliPageControls();
+
+  if (!model.labels.length || !model.series.length || !model.series.some((series) => series.values.some((value) => Number.isFinite(value)))) {
+    clearTitoliChart();
+    setTitoliChartState("Nessuna serie graficabile per il periodo selezionato.", "empty");
+    return;
+  }
+
+  const allValues = model.series.flatMap((series) => series.values).filter((value) => Number.isFinite(value));
+  const yRange = computeDossierChartRange(allValues);
+  const singleSeries = model.series.length === 1;
+  clearTitoliChart();
+  setTitoliChartState("");
+
+  titoliChart = new DashboardMiniLookerChart({
+    canvas: titoliChartCanvas,
+    legendEl: null,
+    labels: model.labels,
+    series: model.series.map((series) => ({
+      ...series,
+      fillColor: singleSeries ? "rgba(79,125,243,0.18)" : "transparent",
+    })),
+    yFormat: formatTitoliPercentTooltip,
+    yAxisFormat: formatTitoliPercentAxis,
+    yTickStep: yRange?.step || calcDashboardPctStep(allValues),
+    yTickMax: 6,
+    yMin: yRange?.min ?? null,
+    yMax: yRange?.max ?? null,
+    xLabelFormat: (label) => titoliState.mode === "year" ? String(label) : formatDashboardMonthYearFromISOShort(label),
+    xTooltipFormat: (label) => titoliState.mode === "year" ? `Anno ${label}` : formatDashboardDateLongFromISO(label),
+    tooltipExtra: (index, context) => {
+      const meta = context?.series?.meta?.[index] || null;
+      if (!meta) return [];
+      return [
+        `Dossier: ${context.series.dossierLabel || "—"}`,
+        `Totale: ${formatTitoliEuroDisplay(meta.value)}`,
+        `Carico: ${formatTitoliEuroDisplay(meta.costBasis)}`,
+      ];
+    },
+    tooltipMode: "nearestSeries",
+    fill: singleSeries,
+    pointRadius: 0,
+    pointHoverRadius: 4,
+    yZeroLine: { value: 0, color: "rgba(55,65,81,0.35)", width: 1, dash: [4, 4] },
+    xLabelWidth: 80,
+  });
+
+  titoliChartCanvas.classList.remove("chart-fade");
+  void titoliChartCanvas.offsetWidth;
+  titoliChartCanvas.classList.add("chart-fade");
+}
+
+function renderTitoliHistoryTable(tbody, rows) {
+  if (!tbody) return;
+  tbody.textContent = "";
+
+  if (!rows.length) {
+    const row = document.createElement("tr");
+    const cell = document.createElement("td");
+    cell.colSpan = 6;
+    cell.className = "titoli-history-empty";
+    cell.textContent = "Nessun dato disponibile.";
+    row.appendChild(cell);
+    tbody.appendChild(row);
+    return;
+  }
+
+  let lastMonth = "";
+  rows.forEach((item) => {
+    const monthKey = item.dateIso.slice(0, 7);
+    if (monthKey !== lastMonth) {
+      const dividerRow = document.createElement("tr");
+      const dividerCell = document.createElement("td");
+      dividerRow.className = "dossier-month-divider-row";
+      dividerCell.colSpan = 6;
+      dividerCell.textContent = getTitoliMonthName(item.dateIso);
+      dividerRow.appendChild(dividerCell);
+      tbody.appendChild(dividerRow);
+      lastMonth = monthKey;
+    }
+
+    const row = document.createElement("tr");
+    row.classList.toggle("dossier-basis-change-row", item.basisChanged);
+    const cells = [
+      { value: formatTitoliDisplayDate(item.dateIso) },
+      { value: formatTitoliEuroDisplay(item.costBasis), numeric: true },
+      { value: formatTitoliEuroDisplay(item.value), numeric: true },
+      { value: formatTitoliEuroDisplay(item.deltaBasis, true), numeric: true, className: getTitoliValueClass(item.deltaBasis) },
+      { value: formatTitoliPercentDisplay(item.pctBasis), numeric: true, className: getTitoliValueClass(item.pctBasis) },
+      { value: formatTitoliEuroDisplay(item.deltaPrev, true), numeric: true, className: getTitoliValueClass(item.deltaPrev) },
+    ];
+
+    cells.forEach((cellInfo) => {
+      const cell = document.createElement("td");
+      if (cellInfo.numeric) cell.classList.add("num");
+      if (cellInfo.className) cell.classList.add(cellInfo.className);
+      cell.textContent = cellInfo.value;
+      row.appendChild(cell);
+    });
+
+    tbody.appendChild(row);
+  });
+}
+
+function renderTitoliHistoryCard(card, dossier, seriesList) {
+  if (!card) return;
+
+  const safeSeriesList = seriesList || [];
+  const defaultSeries = safeSeriesList[0] || null;
+  const currentSelection = titoliState.historySelections[dossier.id] || {};
+  const selectedSeries = safeSeriesList.find((series) => series.key === currentSelection.seriesKey) || defaultSeries;
+  const latest = getTitoliLatestYearMonth(selectedSeries);
+  const selection = {
+    seriesKey: selectedSeries?.key || "",
+    period: currentSelection.period || "month",
+    year: Number(currentSelection.year) || latest.year,
+    month: Number(currentSelection.month) || latest.month,
+  };
+  titoliState.historySelections[dossier.id] = selection;
+
+  card.dataset.dossierId = dossier.id;
+  const safeDossierLabel = escapeTitoliHtml(dossier.label);
+  card.innerHTML = `
+    <div class="titoli-history-title"></div>
+    <div class="titoli-history-toolbar">
+      <div class="titoli-history-filters">
+        <select class="chart-input" data-titoli-history-period aria-label="Periodo ${safeDossierLabel}">
+          <option value="month">Mese</option>
+          <option value="last3">Ultimi 3 mesi</option>
+          <option value="last6">Ultimi 6 mesi</option>
+          <option value="last12">Ultimi 12 mesi</option>
+          <option value="year">Anno intero</option>
+        </select>
+        <select class="chart-input" data-titoli-history-year aria-label="Anno ${safeDossierLabel}"></select>
+        <select class="chart-input" data-titoli-history-month aria-label="Mese ${safeDossierLabel}"></select>
+      </div>
+      <select class="chart-input titoli-history-title-select" data-titoli-history-series aria-label="Titolo ${safeDossierLabel}"></select>
+    </div>
+    <div class="dossier-table-wrap titoli-history-table-wrap">
+      <table class="transactions-table dossier-table titoli-history-table">
+        <thead>
+          <tr>
+            <th>Data</th>
+            <th class="num">Carico</th>
+            <th class="num">Totale</th>
+            <th class="num">Δ vs Carico</th>
+            <th class="num">% vs Carico</th>
+            <th class="num">Δ vs Prec</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  `;
+
+  const titleElement = card.querySelector(".titoli-history-title");
+  const periodSelect = card.querySelector("[data-titoli-history-period]");
+  const yearSelect = card.querySelector("[data-titoli-history-year]");
+  const monthSelect = card.querySelector("[data-titoli-history-month]");
+  const seriesSelect = card.querySelector("[data-titoli-history-series]");
+  const tbody = card.querySelector("tbody");
+
+  if (titleElement) titleElement.textContent = dossier.label;
+
+  if (seriesSelect) {
+    seriesSelect.innerHTML = safeSeriesList.length
+      ? safeSeriesList.map((series) => `<option value="${escapeTitoliHtml(series.key)}">${escapeTitoliHtml(series.name || series.isin)}</option>`).join("")
+      : '<option value="">Titolo</option>';
+    seriesSelect.value = selection.seriesKey;
+  }
+
+  const years = Array.from(new Set((selectedSeries?.rows || []).map((row) => Number(row.dateIso.slice(0, 4)))))
+    .filter((year) => Number.isFinite(year))
+    .sort((first, second) => second - first);
+  if (yearSelect) {
+    const finalYears = years.length ? years : [selection.year];
+    yearSelect.innerHTML = finalYears.map((year) => `<option value="${year}">${year}</option>`).join("");
+    yearSelect.value = String(selection.year);
+  }
+
+  const monthNames = ["Gennaio", "Febbraio", "Marzo", "Aprile", "Maggio", "Giugno", "Luglio", "Agosto", "Settembre", "Ottobre", "Novembre", "Dicembre"];
+  if (monthSelect) {
+    monthSelect.innerHTML = monthNames.map((name, index) => `<option value="${index + 1}">${name}</option>`).join("");
+    monthSelect.value = String(selection.month);
+    monthSelect.disabled = selection.period === "year";
+  }
+
+  if (periodSelect) periodSelect.value = selection.period;
+  renderTitoliHistoryTable(tbody, selectedSeries ? filterTitoliHistoryRows(selectedSeries, selection) : []);
+
+  const rerender = () => renderTitoliHistoryCards();
+  if (seriesSelect) {
+    seriesSelect.addEventListener("change", () => {
+      const nextSeries = safeSeriesList.find((series) => series.key === seriesSelect.value) || defaultSeries;
+      const latestNext = getTitoliLatestYearMonth(nextSeries);
+      titoliState.historySelections[dossier.id] = {
+        ...selection,
+        seriesKey: seriesSelect.value,
+        year: latestNext.year,
+        month: latestNext.month,
+      };
+      rerender();
+    });
+  }
+  if (periodSelect) {
+    periodSelect.addEventListener("change", () => {
+      titoliState.historySelections[dossier.id] = { ...selection, period: periodSelect.value || "month" };
+      rerender();
+    });
+  }
+  if (yearSelect) {
+    yearSelect.addEventListener("change", () => {
+      titoliState.historySelections[dossier.id] = { ...selection, year: Number(yearSelect.value) || selection.year };
+      rerender();
+    });
+  }
+  if (monthSelect) {
+    monthSelect.addEventListener("change", () => {
+      titoliState.historySelections[dossier.id] = { ...selection, month: Number(monthSelect.value) || selection.month };
+      rerender();
+    });
+  }
+}
+
+function renderTitoliEmptyHistoryCard(card, label = "Titoli") {
+  if (!card) return;
+  const title = card.querySelector(".titoli-history-title");
+  const tbody = card.querySelector("tbody");
+  if (title) title.textContent = label;
+  renderTitoliHistoryTable(tbody, []);
+}
+
+function renderTitoliHistoryCards() {
+  const cards = Array.from(titoliPageRoot?.querySelectorAll(".titoli-history-card") || []);
+  const dossiers = titoliState.normalized?.dossiers || [];
+
+  cards.forEach((card, index) => {
+    const dossier = dossiers[index];
+    if (!dossier) {
+      renderTitoliEmptyHistoryCard(card, card.querySelector(".titoli-history-title")?.textContent || "Titoli");
+      return;
+    }
+
+    renderTitoliHistoryCard(card, dossier, titoliState.normalized.seriesByDossier.get(dossier.id) || []);
+  });
+}
+
+function renderTitoliSeriesPanelList() {
+  if (!titoliSeriesList) return;
+  const query = String(titoliState.seriesSearch || "").trim().toLowerCase();
+  const series = (titoliState.normalized?.allSeries || []).filter((item) => {
+    if (!query) return true;
+    return `${item.name} ${item.isin} ${item.dossierLabel}`.toLowerCase().includes(query);
+  });
+
+  if (!series.length) {
+    titoliSeriesList.innerHTML = '<div class="dossier-series-empty">Nessuna serie trovata.</div>';
+    return;
+  }
+
+  titoliSeriesList.innerHTML = series.map((item) => `
+    <div class="dossier-series-row">
+      <label class="dossier-series-option">
+        <input type="checkbox" data-titoli-series-check="${escapeTitoliHtml(item.key)}" ${titoliState.seriesVisibility[item.key] !== false ? "checked" : ""}>
+        <span class="dossier-series-name">${escapeTitoliHtml(item.name || item.isin)}</span>
+      </label>
+      <span class="titoli-series-dossier">${escapeTitoliHtml(item.dossierLabel)}</span>
+      <button type="button" class="dossier-series-solo" data-titoli-series-solo="${escapeTitoliHtml(item.key)}">SOLO</button>
+    </div>
+  `).join("");
+}
+
+function renderTitoliData() {
+  syncTitoliSeriesVisibility();
+  applyTitoliChartPreset(titoliState.range.preset || "last3");
+  syncTitoliPageControls();
+  renderTitoliSeriesPanelList();
+  renderTitoliHistoryCards();
+  const seriesCount = getVisibleTitoliSeries().length;
+  if (titoliSeriesToggleButton) titoliSeriesToggleButton.textContent = `Serie (${seriesCount || 0})`;
+}
+
+async function loadTitoliData() {
+  if (!supabaseClient) {
+    setTitoliChartState("Credenziali Supabase mancanti.", "error");
+    return;
+  }
+
+  setTitoliChartState("Caricamento titoli...");
+
+  try {
+    const [dossiersResult, assetsResult, snapshotsResult] = await Promise.all([
+      supabaseClient.from("dossiers").select("*"),
+      supabaseClient.from("portfolio_assets").select("*"),
+      supabaseClient.from("portfolio_snapshots").select("*"),
+    ]);
+
+    if (dossiersResult.error) throw dossiersResult.error;
+    if (assetsResult.error) throw assetsResult.error;
+    if (snapshotsResult.error) throw snapshotsResult.error;
+
+    let basisEvents = [];
+    let basisAvailable = false;
+    const basisResult = await supabaseClient.from("portfolio_basis_events").select("*");
+    if (basisResult.error) {
+      console.warn("[Titoli] portfolio_basis_events non disponibile, continuo senza carichi:", basisResult.error);
+    } else {
+      basisEvents = basisResult.data ?? [];
+      basisAvailable = true;
+    }
+
+    titoliState.raw = {
+      dossiers: dossiersResult.data ?? [],
+      assets: assetsResult.data ?? [],
+      snapshots: snapshotsResult.data ?? [],
+      basisEvents,
+    };
+    titoliState.normalized = normalizeTitoliData({
+      ...titoliState.raw,
+      basisAvailable,
+    });
+
+    console.log("[Titoli] colonne usate:", titoliState.normalized.columns);
+    console.log("[Titoli] dati letti:", {
+      dossiers: titoliState.raw.dossiers.length,
+      assets: titoliState.raw.assets.length,
+      snapshots: titoliState.raw.snapshots.length,
+      basisEvents: titoliState.raw.basisEvents.length,
+      basisAvailable,
+    });
+
+    renderTitoliData();
+  } catch (error) {
+    console.error("[Titoli] errore fetch dati:", error);
+    setTitoliChartState(`Errore caricamento titoli: ${error.message || error}`, "error");
+    if (titoliHistoryStateElement) titoliHistoryStateElement.textContent = "Errore caricamento titoli.";
+  }
+}
+
+function initTitoliPage() {
+  console.log("[Titoli] UI pronta");
+  setTitoliChartState("Dati non ancora caricati.", "empty");
+  if (titoliHistoryStateElement) titoliHistoryStateElement.textContent = "Dati non ancora caricati.";
+  syncTitoliPageControls();
+
+  if (titoliChartPresetSelect) {
+    titoliChartPresetSelect.addEventListener("change", () => {
+      applyTitoliChartPreset(titoliChartPresetSelect.value || "last3");
+      console.log("[Titoli] preset selezionato:", titoliState.range.preset);
+    });
+  }
+
+  if (titoliChartToggle) {
+    titoliChartToggle.addEventListener("click", (event) => {
+      const button = event.target.closest("[data-titoli-mode]");
+      if (!button) return;
+      titoliState.mode = button.dataset.titoliMode === "year" ? "year" : "month";
+      console.log("[Titoli] granularita selezionata:", titoliState.mode);
+      syncTitoliModeButtons();
+      refreshTitoliChart();
+    });
+  }
+
+  if (titoliChartApplyButton) {
+    titoliChartApplyButton.addEventListener("click", () => {
+      const start = getTitoliMonthStart(String(titoliChartFromInput?.value || "").trim());
+      const end = getTitoliMonthEnd(String(titoliChartToInput?.value || "").trim());
+      if (start && end && start > end) {
+        console.warn("[Titoli] range custom non valido:", { start, end });
+        return;
+      }
+      setTitoliChartRange(start, end, "custom");
+      console.log("[Titoli] range custom:", titoliState.range);
+      refreshTitoliChart();
+    });
+  }
+
+  if (titoliChartCancelButton) {
+    titoliChartCancelButton.addEventListener("click", () => {
+      applyTitoliChartPreset("last3");
+      console.log("[Titoli] range annullato");
+    });
+  }
+
+  if (titoliSeriesToggleButton) {
+    titoliSeriesToggleButton.addEventListener("click", () => {
+      titoliState.seriesPanelOpen = !titoliState.seriesPanelOpen;
+      syncTitoliSeriesPanel();
+    });
+  }
+
+  if (titoliSeriesCloseButton) {
+    titoliSeriesCloseButton.addEventListener("click", () => {
+      titoliState.seriesPanelOpen = false;
+      syncTitoliSeriesPanel();
+    });
+  }
+
+  if (titoliSeriesSearchInput) {
+    titoliSeriesSearchInput.addEventListener("input", () => {
+      titoliState.seriesSearch = String(titoliSeriesSearchInput.value || "").trim();
+      console.log("[Titoli] ricerca serie:", titoliState.seriesSearch);
+      renderTitoliSeriesPanelList();
+    });
+  }
+
+  if (titoliSeriesList) {
+    titoliSeriesList.addEventListener("click", (event) => {
+      const soloButton = event.target.closest("[data-titoli-series-solo]");
+      if (!soloButton) return;
+
+      const soloKey = String(soloButton.dataset.titoliSeriesSolo || "");
+      if (!soloKey) return;
+
+      (titoliState.normalized?.allSeries || []).forEach((series) => {
+        titoliState.seriesVisibility[series.key] = series.key === soloKey;
+      });
+      renderTitoliSeriesPanelList();
+      refreshTitoliChart();
+      if (titoliSeriesToggleButton) titoliSeriesToggleButton.textContent = `Serie (${getVisibleTitoliSeries().length})`;
+    });
+
+    titoliSeriesList.addEventListener("change", (event) => {
+      const input = event.target.closest("[data-titoli-series-check]");
+      if (!input) return;
+      const seriesKey = input.dataset.titoliSeriesCheck;
+      titoliState.seriesVisibility[seriesKey] = input.checked;
+      renderTitoliSeriesPanelList();
+      refreshTitoliChart();
+      if (titoliSeriesToggleButton) titoliSeriesToggleButton.textContent = `Serie (${getVisibleTitoliSeries().length})`;
+    });
+  }
+
+  if (titoliSeriesAllButton) {
+    titoliSeriesAllButton.addEventListener("click", () => {
+      (titoliState.normalized?.allSeries || []).forEach((series) => {
+        titoliState.seriesVisibility[series.key] = true;
+      });
+      renderTitoliSeriesPanelList();
+      refreshTitoliChart();
+      if (titoliSeriesToggleButton) titoliSeriesToggleButton.textContent = `Serie (${getVisibleTitoliSeries().length})`;
+    });
+  }
+
+  if (titoliSeriesNoneButton) {
+    titoliSeriesNoneButton.addEventListener("click", () => {
+      (titoliState.normalized?.allSeries || []).forEach((series) => {
+        titoliState.seriesVisibility[series.key] = false;
+      });
+      renderTitoliSeriesPanelList();
+      refreshTitoliChart();
+      if (titoliSeriesToggleButton) titoliSeriesToggleButton.textContent = `Serie (${getVisibleTitoliSeries().length})`;
+    });
+  }
+
+  loadTitoliData();
+}
+
 function initDossierPage() {
   console.log("[Dossier] UI pronta");
   loadDossierChartPreferences();
@@ -6330,6 +7335,10 @@ if (investmentsCanvas) {
 
 if (titoliInsertRoot && titoliSnapshotDateInput && titoliWeekPicker) {
   initTitoliInsertPage();
+}
+
+if (titoliPageRoot) {
+  initTitoliPage();
 }
 
 if (dossierPageRoot) {

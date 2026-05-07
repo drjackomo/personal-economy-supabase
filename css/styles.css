@@ -1061,6 +1061,171 @@ button:disabled {
   min-height: 300px;
 }
 
+.titoli-page {
+  gap: 12px;
+}
+
+.titoli-page .dashboard-heading {
+  margin-bottom: 4px;
+}
+
+.titoli-page .dashboard-chart-section {
+  padding: 12px;
+}
+
+.titoli-page .dashboard-chart-header {
+  align-items: flex-end;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.titoli-page .chart-title {
+  font-size: 16px;
+  font-weight: 800;
+}
+
+.titoli-page .chart-subtitle,
+.titoli-page .chart-range {
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.titoli-chart-filters {
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.titoli-chart-filters .chart-input,
+.titoli-chart-filters .chart-btn {
+  height: 30px;
+  font-size: 12px;
+}
+
+.titoli-chart-filters #titoli-chart-preset {
+  min-width: 132px;
+}
+
+.titoli-series-toggle {
+  white-space: nowrap;
+}
+
+.titoli-chart-frame {
+  height: 360px;
+  min-height: 0;
+  border: 1px solid rgba(226, 232, 240, 0.82);
+  border-radius: 8px;
+  background: #ffffff;
+  overflow: hidden;
+}
+
+.titoli-chart-frame .chart-canvas {
+  height: 360px;
+  min-height: 360px;
+}
+
+.titoli-preset-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.titoli-preset-btn.is-active {
+  border-color: #111827;
+  background: #111827;
+  color: #ffffff;
+}
+
+.titoli-history-section {
+  display: grid;
+  gap: 12px;
+}
+
+.titoli-history-cards {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.titoli-history-card {
+  position: relative;
+  min-width: 0;
+}
+
+.titoli-history-title {
+  margin-bottom: 8px;
+  color: #111827;
+  font-size: 14px;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.titoli-history-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.titoli-history-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+
+.titoli-history-toolbar .chart-input {
+  height: 30px;
+  font-size: 12px;
+}
+
+.titoli-history-title-select {
+  max-width: 180px;
+  margin-left: auto;
+}
+
+.titoli-history-table-wrap {
+  overflow-x: auto;
+}
+
+.titoli-history-empty {
+  color: #64748b;
+  font-size: 12px;
+  text-align: center;
+}
+
+.titoli-series-dossier {
+  color: #64748b;
+  flex: 0 0 auto;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.titoli-series-list .dossier-series-solo {
+  flex: 0 0 auto;
+  height: 22px;
+  border: 1px solid rgba(17, 24, 39, 0.18);
+  border-radius: 6px;
+  background: #ffffff;
+  color: #111827;
+  font-size: 10px;
+  line-height: 1;
+  padding: 0 7px;
+  text-decoration: none;
+}
+
+.titoli-series-list .dossier-series-solo:hover {
+  border-color: rgba(17, 24, 39, 0.32);
+  background: #f8fafc;
+  color: #111827;
+  text-decoration: none;
+}
+
+.titoli-history-cards > .dashboard-chart-state {
+  display: none;
+}
+
 .dossier-series-menu {
   position: relative;
 }
@@ -2099,6 +2264,28 @@ td.in-totals-column {
 
   .dossier-grid {
     grid-template-columns: 1fr;
+  }
+
+  .titoli-page .dashboard-chart-header {
+    align-items: flex-start;
+  }
+
+  .titoli-history-cards {
+    grid-template-columns: 1fr;
+  }
+
+  .titoli-history-toolbar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .titoli-history-title-select {
+    max-width: none;
+    width: 100%;
+  }
+
+  .titoli-history-table-wrap {
+    overflow-x: auto;
   }
 
   .dossier-card-header {
