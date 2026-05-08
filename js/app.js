@@ -326,14 +326,51 @@ async function signOut() {
   renderAuthGate();
 }
 
-function renderAuthGate(message, user = null) {
-  document.body.classList.add("is-auth-gated");
+function createAuthBrand() {
+  const brand = document.createElement("div");
+  const logo = document.createElement("img");
+
+  brand.className = "auth-brand";
+  logo.className = "auth-logo";
+  logo.src = "assets/favicon.svg";
+  logo.alt = "";
+
+  brand.appendChild(logo);
+  return brand;
+}
+
+function renderAuthLoadingGate() {
+  document.body.classList.add("is-auth-loading");
+  document.body.classList.remove("is-auth-ready", "is-auth-gated");
   document.getElementById("auth-gate")?.remove();
 
   const gate = document.createElement("main");
   const card = document.createElement("section");
-  const brand = document.createElement("div");
-  const logo = document.createElement("img");
+  const title = document.createElement("h1");
+  const subtitle = document.createElement("p");
+
+  gate.id = "auth-gate";
+  gate.className = "auth-gate auth-loading-gate";
+  card.className = "auth-card auth-loading-card";
+  title.className = "auth-title";
+  subtitle.className = "auth-subtitle";
+  title.textContent = "Personal Economy";
+  subtitle.textContent = "Caricamento...";
+
+  card.appendChild(createAuthBrand());
+  card.appendChild(title);
+  card.appendChild(subtitle);
+  gate.appendChild(card);
+  document.body.appendChild(gate);
+}
+
+function renderAuthGate(message, user = null) {
+  document.body.classList.add("is-auth-gated");
+  document.body.classList.remove("is-auth-loading", "is-auth-ready");
+  document.getElementById("auth-gate")?.remove();
+
+  const gate = document.createElement("main");
+  const card = document.createElement("section");
   const title = document.createElement("h1");
   const subtitle = document.createElement("p");
   const eyebrow = document.createElement("p");
@@ -343,10 +380,6 @@ function renderAuthGate(message, user = null) {
   gate.id = "auth-gate";
   gate.className = "auth-gate";
   card.className = "auth-card";
-  brand.className = "auth-brand";
-  logo.className = "auth-logo";
-  logo.src = "assets/favicon.svg";
-  logo.alt = "";
   title.className = "auth-title";
   subtitle.className = "auth-subtitle";
   eyebrow.className = "auth-eyebrow";
@@ -367,8 +400,7 @@ function renderAuthGate(message, user = null) {
   eyebrow.appendChild(eyebrowIcon);
   eyebrow.appendChild(eyebrowText);
 
-  brand.appendChild(logo);
-  card.appendChild(brand);
+  card.appendChild(createAuthBrand());
   card.appendChild(title);
   card.appendChild(subtitle);
   card.appendChild(eyebrow);
@@ -424,7 +456,8 @@ function renderAuthGate(message, user = null) {
 }
 
 function removeAuthGate() {
-  document.body.classList.remove("is-auth-gated");
+  document.body.classList.remove("is-auth-gated", "is-auth-loading");
+  document.body.classList.add("is-auth-ready");
   document.getElementById("auth-gate")?.remove();
 }
 
@@ -535,6 +568,8 @@ async function initAuthenticatedApp(user) {
 }
 
 async function initAuthGate() {
+  renderAuthLoadingGate();
+
   if (!supabaseClient?.auth) {
     renderAuthGate("Credenziali Supabase mancanti o client Supabase non disponibile.");
     return;
@@ -551,8 +586,8 @@ async function initAuthGate() {
     return;
   }
 
-  removeAuthGate();
   await initAuthenticatedApp(user);
+  removeAuthGate();
 }
 
 function setStatus(message, type) {
