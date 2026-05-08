@@ -133,6 +133,20 @@ const dossierTotalsYearSelect = document.getElementById("dossier-totals-year");
 const dossierTotalsMonthSelect = document.getElementById("dossier-totals-month");
 const dossierTotalsStateElement = document.getElementById("dossier-totals-state");
 const dossierTotalsTableBody = document.querySelector("#dossier-totals-table tbody");
+const adminInvestmentsBasisEventsPageRoot = document.getElementById("admin-investments-basis-events-page");
+const adminInvestmentsBasisEventsStateElement = document.getElementById("admin-investments-basis-events-state");
+const adminInvestmentsBasisEventsTableBody = document.querySelector("#admin-investments-basis-events-table tbody");
+const adminInvestmentsBasisEventForm = document.getElementById("admin-investments-basis-event-form");
+const adminInvestmentsBasisEventIdInput = document.getElementById("admin-investments-basis-event-id");
+const adminInvestmentsBasisEventDateInput = document.getElementById("admin-investments-basis-event-date");
+const adminInvestmentsBasisEventDossierSelect = document.getElementById("admin-investments-basis-event-dossier-id");
+const adminInvestmentsBasisEventAmountInput = document.getElementById("admin-investments-basis-event-amount");
+const adminInvestmentsBasisEventNoteInput = document.getElementById("admin-investments-basis-event-note");
+const adminInvestmentsBasisEventNewButton = document.getElementById("admin-investments-basis-event-new");
+const adminInvestmentsBasisEventDeleteButton = document.getElementById("admin-investments-basis-event-delete");
+const adminInvestmentsBasisEventDeleteModal = document.getElementById("admin-investments-basis-event-delete-modal");
+const adminInvestmentsBasisEventCancelDeleteButton = document.getElementById("admin-investments-basis-event-cancel-delete");
+const adminInvestmentsBasisEventConfirmDeleteButton = document.getElementById("admin-investments-basis-event-confirm-delete");
 const navbarRoot = document.getElementById("navbar-root");
 
 const hasCredentials =
@@ -217,6 +231,12 @@ let dossierChartState = {
   seriesSearch: "",
   seriesPanelOpen: false,
 };
+let adminInvestmentsBasisEventsState = {
+  events: [],
+  dossiers: [],
+  selectedId: "",
+  selectedEvent: null,
+};
 
 const supabaseClient = hasCredentials && window.supabase
   ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
@@ -248,6 +268,18 @@ async function loadNavbar() {
 
       if (linkPage === currentPage) {
         link.classList.add("active");
+      }
+    });
+
+    document.querySelectorAll("#navbar-root .nav-dropdown").forEach((dropdown) => {
+      const pages = String(dropdown.dataset.navPages || "")
+        .split(",")
+        .map((page) => normalizePage(page.trim()))
+        .filter(Boolean);
+      const toggle = dropdown.querySelector(".nav-dropdown-toggle");
+
+      if (toggle) {
+        toggle.classList.toggle("active", pages.includes(currentPage));
       }
     });
   } catch (error) {
@@ -502,6 +534,10 @@ async function initAuthenticatedApp(user) {
 
   if (dossierPageRoot) {
     initDossierPage();
+  }
+
+  if (adminInvestmentsBasisEventsPageRoot) {
+    initAdminInvestmentsBasisEventsPage();
   }
 
   if (movimentiTableElement && movimentiMonthSelect && movimentiYearSelect && applyMovimentiFilterButton) {
@@ -7608,6 +7644,445 @@ async function fetchDossierBaseData() {
   } catch (error) {
     console.error("[Dossier] Errore fetch dati base:", error);
   }
+}
+
+function setAdminState(element, message, type) {
+  if (!element) return;
+
+  element.textContent = message || "";
+  element.className = `dashboard-chart-state ${message ? "is-visible" : ""} ${type ? `is-${type}` : ""}`;
+}
+
+function appendAdminTableCell(row, value, className = "") {
+  const cell = document.createElement("td");
+  cell.textContent = value === null || value === undefined || value === "" ? "—" : String(value);
+  if (className) cell.className = className;
+  row.appendChild(cell);
+}
+
+function openAdminModal(modal) {
+  if (!modal) return;
+
+  modal.classList.add("is-open");
+  modal.setAttribute("aria-hidden", "false");
+}
+
+function closeAdminModal(modal) {
+  if (!modal) return;
+
+  modal.classList.remove("is-open");
+  modal.setAttribute("aria-hidden", "true");
+}
+
+function parseAdminItalianAmount(value) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return null;
+
+  const normalized = raw.includes(",")
+    ? raw.replace(/\./g, "").replace(",", ".")
+    : raw;
+  const amount = Number(normalized);
+
+  return Number.isFinite(amount) ? amount : null;
+}
+
+function formatAdminItalianAmountInput(value) {
+  if (value === null || value === undefined || value === "") return "";
+
+  const amount = Number(value);
+  if (!Number.isFinite(amount)) return "";
+
+  return amount.toLocaleString("it-IT", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+}
+
+function getAdminInvestmentsBasisEventRowKey(event) {
+  return String(event?.id ?? "");
+}
+
+function getAdminInvestmentsBasisDossierLabel(dossierId) {
+  const dossier = (adminInvestmentsBasisEventsState.dossiers || [])
+    .find((item) => String(item.account_id || "") === String(dossierId || ""));
+
+  return dossier?.label || dossierId || "—";
+}
+
+function sortAdminInvestmentsBasisDossiers(dossiers) {
+  return [...(dossiers || [])]
+    .filter((dossier) => dossier?.is_closed !== true)
+    .sort((first, second) => {
+      const firstOrder = Number(first?.order);
+      const secondOrder = Number(second?.order);
+
+      if (Number.isFinite(firstOrder) && Number.isFinite(secondOrder) && firstOrder !== secondOrder) {
+        return firstOrder - secondOrder;
+      }
+
+      if (Number.isFinite(firstOrder) && !Number.isFinite(secondOrder)) return -1;
+      if (!Number.isFinite(firstOrder) && Number.isFinite(secondOrder)) return 1;
+
+      return String(first?.label || "").localeCompare(String(second?.label || ""), "it", { sensitivity: "base" });
+    });
+}
+
+function sortAdminInvestmentsBasisEvents(events) {
+  return [...(events || [])].sort((first, second) => {
+    const firstDate = String(first?.event_date || "");
+    const secondDate = String(second?.event_date || "");
+
+    if (firstDate !== secondDate) {
+      return secondDate.localeCompare(firstDate);
+    }
+
+    return String(second?.id || "").localeCompare(String(first?.id || ""));
+  });
+}
+
+function renderAdminInvestmentsBasisDossierOptions() {
+  if (!adminInvestmentsBasisEventDossierSelect) return;
+
+  const currentValue = adminInvestmentsBasisEventDossierSelect.value;
+  adminInvestmentsBasisEventDossierSelect.textContent = "";
+
+  const emptyOption = document.createElement("option");
+  emptyOption.value = "";
+  emptyOption.textContent = "Seleziona dossier";
+  adminInvestmentsBasisEventDossierSelect.appendChild(emptyOption);
+
+  adminInvestmentsBasisEventsState.dossiers.forEach((dossier) => {
+    const option = document.createElement("option");
+    option.value = String(dossier.account_id || "");
+    option.textContent = String(dossier.label || dossier.account_id || "");
+    adminInvestmentsBasisEventDossierSelect.appendChild(option);
+  });
+
+  if (currentValue && adminInvestmentsBasisEventsState.dossiers.some((dossier) => String(dossier.account_id || "") === currentValue)) {
+    adminInvestmentsBasisEventDossierSelect.value = currentValue;
+  }
+}
+
+function updateAdminInvestmentsBasisEventDeleteButton() {
+  if (!adminInvestmentsBasisEventDeleteButton) return;
+
+  adminInvestmentsBasisEventDeleteButton.disabled = !adminInvestmentsBasisEventsState.selectedEvent;
+}
+
+function renderAdminInvestmentsBasisEventsTable() {
+  if (!adminInvestmentsBasisEventsTableBody) return;
+
+  const sortedEvents = sortAdminInvestmentsBasisEvents(adminInvestmentsBasisEventsState.events);
+  adminInvestmentsBasisEventsTableBody.textContent = "";
+
+  if (!sortedEvents.length) {
+    const row = document.createElement("tr");
+    const cell = document.createElement("td");
+
+    cell.colSpan = 4;
+    cell.textContent = "Nessun evento trovato.";
+    row.appendChild(cell);
+    adminInvestmentsBasisEventsTableBody.appendChild(row);
+    return;
+  }
+
+  sortedEvents.forEach((basisEvent) => {
+    const row = document.createElement("tr");
+    const rowKey = getAdminInvestmentsBasisEventRowKey(basisEvent);
+
+    row.dataset.eventId = rowKey;
+    row.classList.toggle("is-selected", rowKey === adminInvestmentsBasisEventsState.selectedId);
+
+    appendAdminTableCell(row, formatDashboardDate(basisEvent.event_date));
+    appendAdminTableCell(row, getAdminInvestmentsBasisDossierLabel(basisEvent.dossier_id));
+    appendAdminTableCell(row, formatEuro(basisEvent.amount), "num");
+    appendAdminTableCell(row, basisEvent.note);
+
+    row.addEventListener("click", () => {
+      adminInvestmentsBasisEventsState.selectedId = rowKey;
+      adminInvestmentsBasisEventsState.selectedEvent = basisEvent;
+      populateAdminInvestmentsBasisEventForm(basisEvent);
+      updateAdminInvestmentsBasisEventDeleteButton();
+      renderAdminInvestmentsBasisEventsTable();
+    });
+
+    adminInvestmentsBasisEventsTableBody.appendChild(row);
+  });
+}
+
+function populateAdminInvestmentsBasisEventForm(basisEvent) {
+  if (
+    !adminInvestmentsBasisEventIdInput ||
+    !adminInvestmentsBasisEventDateInput ||
+    !adminInvestmentsBasisEventDossierSelect ||
+    !adminInvestmentsBasisEventAmountInput ||
+    !adminInvestmentsBasisEventNoteInput
+  ) {
+    return;
+  }
+
+  adminInvestmentsBasisEventIdInput.value = basisEvent?.id ?? "";
+  adminInvestmentsBasisEventDateInput.value = basisEvent?.event_date ?? "";
+  adminInvestmentsBasisEventDossierSelect.value = basisEvent?.dossier_id ?? "";
+  adminInvestmentsBasisEventAmountInput.value = formatAdminItalianAmountInput(basisEvent?.amount);
+  adminInvestmentsBasisEventNoteInput.value = basisEvent?.note ?? "";
+}
+
+function resetAdminInvestmentsBasisEventForm() {
+  adminInvestmentsBasisEventsState.selectedId = "";
+  adminInvestmentsBasisEventsState.selectedEvent = null;
+  populateAdminInvestmentsBasisEventForm({
+    id: "",
+    event_date: "",
+    dossier_id: "",
+    amount: "",
+    note: "",
+  });
+  updateAdminInvestmentsBasisEventDeleteButton();
+  renderAdminInvestmentsBasisEventsTable();
+}
+
+function collectAdminInvestmentsBasisEventFormData() {
+  return {
+    id: adminInvestmentsBasisEventIdInput?.value.trim() || null,
+    event_date: adminInvestmentsBasisEventDateInput?.value.trim() || "",
+    dossier_id: adminInvestmentsBasisEventDossierSelect?.value.trim() || "",
+    amount: parseAdminItalianAmount(adminInvestmentsBasisEventAmountInput?.value),
+    note: adminInvestmentsBasisEventNoteInput?.value.trim() || "",
+  };
+}
+
+function validateAdminInvestmentsBasisEventFormData(formData) {
+  if (!formData.event_date) return "Date obbligatoria.";
+  if (!formData.dossier_id) return "Dossier obbligatorio.";
+  if (!Number.isFinite(formData.amount)) return "Amount obbligatorio e numerico.";
+
+  return "";
+}
+
+function buildAdminInvestmentsBasisEventPayload(formData) {
+  return {
+    event_date: formData.event_date,
+    dossier_id: formData.dossier_id,
+    amount: formData.amount,
+    note: formData.note || null,
+  };
+}
+
+async function loadAdminInvestmentsBasisEvents(options = {}) {
+  const resetWhenNoSelection = options.resetWhenNoSelection !== false;
+
+  if (!supabaseClient) {
+    setAdminState(adminInvestmentsBasisEventsStateElement, "Credenziali Supabase mancanti.", "error");
+    return;
+  }
+
+  setAdminState(adminInvestmentsBasisEventsStateElement, "Caricamento eventi...");
+
+  try {
+    const [eventsResult, dossiersResult] = await Promise.all([
+      supabaseClient
+        .from("investments_basis_events")
+        .select("id,event_date,dossier_id,amount,note")
+        .order("event_date", { ascending: false })
+        .order("id", { ascending: false }),
+      supabaseClient
+        .from("dossiers")
+        .select("account_id,label,order,is_closed")
+        .order("order", { ascending: true, nullsFirst: false })
+        .order("label", { ascending: true }),
+    ]);
+
+    if (eventsResult.error || dossiersResult.error) {
+      console.error("[Admin Investments Basis] Errore caricamento dati:", {
+        eventsError: eventsResult.error,
+        dossiersError: dossiersResult.error,
+      });
+      setAdminState(
+        adminInvestmentsBasisEventsStateElement,
+        `Errore caricamento dati: ${(eventsResult.error || dossiersResult.error)?.message}`,
+        "error",
+      );
+      return;
+    }
+
+    adminInvestmentsBasisEventsState.events = sortAdminInvestmentsBasisEvents(eventsResult.data);
+    adminInvestmentsBasisEventsState.dossiers = sortAdminInvestmentsBasisDossiers(dossiersResult.data);
+    setAdminState(adminInvestmentsBasisEventsStateElement, "");
+    renderAdminInvestmentsBasisDossierOptions();
+    renderAdminInvestmentsBasisEventsTable();
+
+    if (resetWhenNoSelection && !adminInvestmentsBasisEventsState.selectedEvent) {
+      resetAdminInvestmentsBasisEventForm();
+    }
+  } catch (error) {
+    console.error("[Admin Investments Basis] Errore imprevisto caricamento dati:", error);
+    setAdminState(adminInvestmentsBasisEventsStateElement, `Errore caricamento dati: ${error.message || error}`, "error");
+  }
+}
+
+async function reloadAdminInvestmentsBasisEventsAfterSave(savedId) {
+  adminInvestmentsBasisEventsState.selectedId = savedId ? String(savedId) : "";
+  adminInvestmentsBasisEventsState.selectedEvent = null;
+
+  await loadAdminInvestmentsBasisEvents({ resetWhenNoSelection: false });
+
+  const savedEvent = (adminInvestmentsBasisEventsState.events || [])
+    .find((basisEvent) => String(basisEvent.id ?? "") === String(savedId ?? ""));
+
+  if (savedEvent) {
+    adminInvestmentsBasisEventsState.selectedId = getAdminInvestmentsBasisEventRowKey(savedEvent);
+    adminInvestmentsBasisEventsState.selectedEvent = savedEvent;
+    populateAdminInvestmentsBasisEventForm(savedEvent);
+    updateAdminInvestmentsBasisEventDeleteButton();
+    renderAdminInvestmentsBasisEventsTable();
+  } else {
+    resetAdminInvestmentsBasisEventForm();
+  }
+}
+
+async function saveAdminInvestmentsBasisEvent() {
+  if (!supabaseClient) {
+    alert("Credenziali Supabase mancanti.");
+    return;
+  }
+
+  const formData = collectAdminInvestmentsBasisEventFormData();
+  const validationMessage = validateAdminInvestmentsBasisEventFormData(formData);
+
+  if (validationMessage) {
+    alert(validationMessage);
+    return;
+  }
+
+  const payload = buildAdminInvestmentsBasisEventPayload(formData);
+
+  try {
+    const query = formData.id
+      ? supabaseClient
+        .from("investments_basis_events")
+        .update(payload)
+        .eq("id", formData.id)
+        .select("id,event_date,dossier_id,amount,note")
+        .single()
+      : supabaseClient
+        .from("investments_basis_events")
+        .insert(payload)
+        .select("id,event_date,dossier_id,amount,note")
+        .single();
+
+    const { data, error } = await query;
+
+    if (error) {
+      console.error("[Admin Investments Basis] Errore salvataggio evento:", {
+        mode: formData.id ? "update" : "insert",
+        formData,
+        payload,
+        error,
+      });
+      alert(`Errore salvataggio evento: ${error.message || error}`);
+      return;
+    }
+
+    await reloadAdminInvestmentsBasisEventsAfterSave(data?.id ?? formData.id);
+  } catch (error) {
+    console.error("[Admin Investments Basis] Errore imprevisto salvataggio evento:", {
+      formData,
+      payload,
+      error,
+    });
+    alert(`Errore salvataggio evento: ${error.message || error}`);
+  }
+}
+
+function openAdminInvestmentsBasisEventDeleteModal() {
+  if (!adminInvestmentsBasisEventsState.selectedEvent) return;
+
+  openAdminModal(adminInvestmentsBasisEventDeleteModal);
+}
+
+function closeAdminInvestmentsBasisEventDeleteModal() {
+  closeAdminModal(adminInvestmentsBasisEventDeleteModal);
+}
+
+async function deleteAdminInvestmentsBasisEvent() {
+  const selectedId = adminInvestmentsBasisEventIdInput?.value.trim() || adminInvestmentsBasisEventsState.selectedEvent?.id || "";
+
+  if (!selectedId) {
+    alert("Nessun evento selezionato da eliminare.");
+    return;
+  }
+
+  if (!supabaseClient) {
+    alert("Credenziali Supabase mancanti.");
+    return;
+  }
+
+  if (adminInvestmentsBasisEventConfirmDeleteButton) {
+    adminInvestmentsBasisEventConfirmDeleteButton.disabled = true;
+    adminInvestmentsBasisEventConfirmDeleteButton.textContent = "Elimino...";
+  }
+
+  try {
+    const { error } = await supabaseClient
+      .from("investments_basis_events")
+      .delete()
+      .eq("id", selectedId);
+
+    if (error) {
+      console.error("[Admin Investments Basis] Errore eliminazione evento:", {
+        id: selectedId,
+        record: adminInvestmentsBasisEventsState.selectedEvent,
+        error,
+      });
+      alert(`Errore eliminazione evento: ${error.message || error}`);
+      return;
+    }
+
+    closeAdminInvestmentsBasisEventDeleteModal();
+    adminInvestmentsBasisEventsState.selectedId = "";
+    adminInvestmentsBasisEventsState.selectedEvent = null;
+    await loadAdminInvestmentsBasisEvents({ resetWhenNoSelection: false });
+    resetAdminInvestmentsBasisEventForm();
+  } catch (error) {
+    console.error("[Admin Investments Basis] Errore imprevisto eliminazione evento:", {
+      id: selectedId,
+      record: adminInvestmentsBasisEventsState.selectedEvent,
+      error,
+    });
+    alert(`Errore eliminazione evento: ${error.message || error}`);
+  } finally {
+    if (adminInvestmentsBasisEventConfirmDeleteButton) {
+      adminInvestmentsBasisEventConfirmDeleteButton.disabled = false;
+      adminInvestmentsBasisEventConfirmDeleteButton.textContent = "Elimina";
+    }
+  }
+}
+
+function initAdminInvestmentsBasisEventsPage() {
+  if (!adminInvestmentsBasisEventForm || !adminInvestmentsBasisEventsTableBody) return;
+
+  adminInvestmentsBasisEventNewButton?.addEventListener("click", resetAdminInvestmentsBasisEventForm);
+  adminInvestmentsBasisEventDeleteButton?.addEventListener("click", openAdminInvestmentsBasisEventDeleteModal);
+  adminInvestmentsBasisEventCancelDeleteButton?.addEventListener("click", closeAdminInvestmentsBasisEventDeleteModal);
+  adminInvestmentsBasisEventConfirmDeleteButton?.addEventListener("click", deleteAdminInvestmentsBasisEvent);
+  adminInvestmentsBasisEventDeleteModal?.addEventListener("click", (event) => {
+    if (event.target === adminInvestmentsBasisEventDeleteModal) {
+      closeAdminInvestmentsBasisEventDeleteModal();
+    }
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && adminInvestmentsBasisEventDeleteModal?.classList.contains("is-open")) {
+      closeAdminInvestmentsBasisEventDeleteModal();
+    }
+  });
+  adminInvestmentsBasisEventForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    saveAdminInvestmentsBasisEvent();
+  });
+
+  resetAdminInvestmentsBasisEventForm();
+  loadAdminInvestmentsBasisEvents();
 }
 
 async function loadMovimenti() {

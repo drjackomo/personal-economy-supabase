@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="it">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="robots" content="noindex, nofollow, noarchive, nosnippet">
+    <title>Investments Basis - Personal Economy</title>
+    <link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
+    <link rel="stylesheet" href="css/styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="js/app.js" defer></script>
+  </head>
+  <body>
+    <div id="navbar-root"></div>
+
+    <main id="admin-investments-basis-events-page" class="app dashboard-page admin-page">
+      <div class="dashboard-heading">
+        <h1>Investments Basis</h1>
+        <p class="subtitle">Gestione eventi base investimenti</p>
+      </div>
+
+      <section class="admin-db-layout" aria-label="Gestione investments basis events">
+        <article class="dashboard-chart-section admin-db-table-card" aria-labelledby="admin-investments-basis-events-table-title">
+          <div class="dashboard-chart-header">
+            <h2 id="admin-investments-basis-events-table-title" class="chart-title">Tabella Investments Basis</h2>
+          </div>
+          <div id="admin-investments-basis-events-state" class="dashboard-chart-state is-visible" aria-live="polite">Caricamento eventi...</div>
+          <div class="admin-db-table-wrap">
+            <table id="admin-investments-basis-events-table" class="transactions-table admin-db-table">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Dossier</th>
+                  <th>Amount</th>
+                  <th>Note</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </article>
+
+        <article class="dashboard-chart-section admin-db-form-card" aria-labelledby="admin-investments-basis-event-form-title">
+          <div class="dashboard-chart-header">
+            <h2 id="admin-investments-basis-event-form-title" class="chart-title">Dettaglio Evento</h2>
+          </div>
+          <form id="admin-investments-basis-event-form" class="admin-db-form">
+            <input id="admin-investments-basis-event-id" type="hidden">
+            <label class="admin-db-field">
+              <span>Date</span>
+              <input id="admin-investments-basis-event-date" class="chart-input" type="date">
+            </label>
+            <label class="admin-db-field">
+              <span>Dossier</span>
+              <select id="admin-investments-basis-event-dossier-id" class="chart-input"></select>
+            </label>
+            <label class="admin-db-field">
+              <span>Amount</span>
+              <input id="admin-investments-basis-event-amount" class="chart-input" type="text" inputmode="decimal">
+            </label>
+            <label class="admin-db-field">
+              <span>Note</span>
+              <textarea id="admin-investments-basis-event-note" class="chart-input admin-db-textarea" rows="4"></textarea>
+            </label>
+            <div class="admin-db-form-actions">
+              <button id="admin-investments-basis-event-new" class="chart-btn ghost" type="button">Nuovo</button>
+              <button id="admin-investments-basis-event-delete" class="chart-btn danger" type="button" disabled>Elimina</button>
+              <button id="admin-investments-basis-event-save" class="chart-btn" type="submit">Salva</button>
+            </div>
+          </form>
+        </article>
+      </section>
+    </main>
+
+    <div id="admin-investments-basis-event-delete-modal" class="modal-overlay" aria-hidden="true">
+      <div class="modal-card admin-confirm-modal-card" role="dialog" aria-modal="true" aria-labelledby="admin-investments-basis-event-delete-title">
+        <div class="modal-header">
+          <div>
+            <h2 id="admin-investments-basis-event-delete-title">Eliminare evento?</h2>
+            <p class="admin-confirm-message">Confermi l'eliminazione dell'evento selezionato?</p>
+          </div>
+        </div>
+
+        <div class="modal-actions">
+          <button id="admin-investments-basis-event-cancel-delete" class="secondary-action" type="button">Annulla</button>
+          <button id="admin-investments-basis-event-confirm-delete" class="danger-action" type="button">Elimina</button>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>
