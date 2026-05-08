@@ -133,6 +133,22 @@ const dossierTotalsYearSelect = document.getElementById("dossier-totals-year");
 const dossierTotalsMonthSelect = document.getElementById("dossier-totals-month");
 const dossierTotalsStateElement = document.getElementById("dossier-totals-state");
 const dossierTotalsTableBody = document.querySelector("#dossier-totals-table tbody");
+const adminDossiersPageRoot = document.getElementById("admin-dossiers-page");
+const adminDossiersStateElement = document.getElementById("admin-dossiers-state");
+const adminDossiersTableBody = document.querySelector("#admin-dossiers-table tbody");
+const adminDossierForm = document.getElementById("admin-dossier-form");
+const adminDossierIdInput = document.getElementById("admin-dossier-id");
+const adminDossierAccountIdInput = document.getElementById("admin-dossier-account-id");
+const adminDossierLabelInput = document.getElementById("admin-dossier-label");
+const adminDossierTypeInput = document.getElementById("admin-dossier-type");
+const adminDossierVisibleInput = document.getElementById("admin-dossier-visible");
+const adminDossierIsClosedInput = document.getElementById("admin-dossier-is-closed");
+const adminDossierOrderInput = document.getElementById("admin-dossier-order");
+const adminDossierNewButton = document.getElementById("admin-dossier-new");
+const adminDossierDeleteButton = document.getElementById("admin-dossier-delete");
+const adminDossierDeleteModal = document.getElementById("admin-dossier-delete-modal");
+const adminDossierCancelDeleteButton = document.getElementById("admin-dossier-cancel-delete");
+const adminDossierConfirmDeleteButton = document.getElementById("admin-dossier-confirm-delete");
 const navbarRoot = document.getElementById("navbar-root");
 
 const hasCredentials =
@@ -217,6 +233,11 @@ let dossierChartState = {
   seriesSearch: "",
   seriesPanelOpen: false,
 };
+let adminDossiersState = {
+  dossiers: [],
+  selectedId: "",
+  selectedDossier: null,
+};
 
 const supabaseClient = hasCredentials && window.supabase
   ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
@@ -248,6 +269,19 @@ async function loadNavbar() {
 
       if (linkPage === currentPage) {
         link.classList.add("active");
+      }
+    });
+
+    document.querySelectorAll("#navbar-root .nav-dropdown").forEach((dropdown) => {
+      const pages = String(dropdown.dataset.navPages || "")
+        .split(",")
+        .map((page) => normalizePage(page.trim()))
+        .filter(Boolean);
+      const toggle = dropdown.querySelector(".nav-dropdown-toggle");
+      const isActive = pages.includes(currentPage);
+
+      if (toggle) {
+        toggle.classList.toggle("active", isActive);
       }
     });
   } catch (error) {
@@ -502,6 +536,10 @@ async function initAuthenticatedApp(user) {
 
   if (dossierPageRoot) {
     initDossierPage();
+  }
+
+  if (adminDossiersPageRoot) {
+    initAdminDossiersPage();
   }
 
   if (movimentiTableElement && movimentiMonthSelect && movimentiYearSelect && applyMovimentiFilterButton) {
@@ -7608,6 +7646,416 @@ async function fetchDossierBaseData() {
   } catch (error) {
     console.error("[Dossier] Errore fetch dati base:", error);
   }
+}
+
+function setAdminDossiersState(message, type) {
+  if (!adminDossiersStateElement) return;
+
+  adminDossiersStateElement.textContent = message || "";
+  adminDossiersStateElement.className = `dashboard-chart-state ${message ? "is-visible" : ""} ${type ? `is-${type}` : ""}`;
+}
+
+function getAdminDossierRowKey(dossier) {
+  return String(dossier?.id ?? dossier?.account_id ?? "");
+}
+
+function formatAdminBoolean(value) {
+  return value === true ? "Si" : "No";
+}
+
+function appendAdminDossierCell(row, value) {
+  const cell = document.createElement("td");
+  cell.textContent = value === null || value === undefined || value === "" ? "—" : String(value);
+  row.appendChild(cell);
+}
+
+function updateAdminDossierDeleteButton() {
+  if (!adminDossierDeleteButton) return;
+
+  adminDossierDeleteButton.disabled = !adminDossiersState.selectedDossier;
+}
+
+function parseAdminDossierOrder(value) {
+  if (value === null || value === undefined) return null;
+  if (typeof value === "string" && value.trim() === "") return null;
+
+  const order = Number(value);
+  return Number.isFinite(order) ? order : null;
+}
+
+function getNextAdminDossierOrder(debug = false) {
+  const orders = (adminDossiersState.dossiers || [])
+    .map((dossier) => parseAdminDossierOrder(dossier?.order))
+    .filter((order) => order !== null);
+  const maxOrder = orders.length ? Math.max(...orders) : null;
+  const nextOrder = maxOrder === null ? 1 : maxOrder + 1;
+
+  if (debug) {
+    console.log("[Admin Dossiers] orders disponibili:", orders);
+    console.log("[Admin Dossiers] maxOrder:", maxOrder);
+    console.log("[Admin Dossiers] nextOrder:", nextOrder);
+  }
+
+  return nextOrder;
+}
+
+function sortAdminDossiers(dossiers) {
+  return [...(dossiers || [])].sort((first, second) => {
+    const firstOrder = parseAdminDossierOrder(first?.order);
+    const secondOrder = parseAdminDossierOrder(second?.order);
+
+    if (firstOrder !== null && secondOrder !== null && firstOrder !== secondOrder) {
+      return firstOrder - secondOrder;
+    }
+
+    if (firstOrder !== null && secondOrder === null) return -1;
+    if (firstOrder === null && secondOrder !== null) return 1;
+
+    const firstLabel = String(first?.label || "");
+    const secondLabel = String(second?.label || "");
+    return firstLabel.localeCompare(secondLabel, "it", { sensitivity: "base" });
+  });
+}
+
+function renderAdminDossiersTable() {
+  if (!adminDossiersTableBody) return;
+
+  adminDossiersTableBody.textContent = "";
+  const sortedDossiers = sortAdminDossiers(adminDossiersState.dossiers);
+
+  if (!sortedDossiers.length) {
+    const row = document.createElement("tr");
+    const cell = document.createElement("td");
+
+    cell.colSpan = 6;
+    cell.textContent = "Nessun dossier trovato.";
+    row.appendChild(cell);
+    adminDossiersTableBody.appendChild(row);
+    return;
+  }
+
+  sortedDossiers.forEach((dossier) => {
+    const row = document.createElement("tr");
+    const rowKey = getAdminDossierRowKey(dossier);
+
+    row.dataset.dossierId = rowKey;
+    row.classList.toggle("is-selected", rowKey === adminDossiersState.selectedId);
+
+    appendAdminDossierCell(row, dossier.order);
+    appendAdminDossierCell(row, dossier.account_id);
+    appendAdminDossierCell(row, dossier.label);
+    appendAdminDossierCell(row, dossier.type);
+    appendAdminDossierCell(row, formatAdminBoolean(dossier.visible));
+    appendAdminDossierCell(row, formatAdminBoolean(dossier.is_closed));
+
+    row.addEventListener("click", () => {
+      adminDossiersState.selectedId = rowKey;
+      adminDossiersState.selectedDossier = dossier;
+      populateAdminDossierForm(dossier);
+      updateAdminDossierDeleteButton();
+      renderAdminDossiersTable();
+    });
+
+    adminDossiersTableBody.appendChild(row);
+  });
+}
+
+function populateAdminDossierForm(dossier) {
+  if (
+    !adminDossierIdInput ||
+    !adminDossierAccountIdInput ||
+    !adminDossierLabelInput ||
+    !adminDossierTypeInput ||
+    !adminDossierVisibleInput ||
+    !adminDossierIsClosedInput ||
+    !adminDossierOrderInput
+  ) {
+    return;
+  }
+
+  adminDossierIdInput.value = dossier?.id ?? "";
+  adminDossierAccountIdInput.value = dossier?.account_id ?? "";
+  adminDossierLabelInput.value = dossier?.label ?? "";
+  adminDossierTypeInput.value = dossier?.type === "CHILD" ? "CHILD" : "ADULT";
+  adminDossierVisibleInput.checked = dossier?.visible === true;
+  adminDossierIsClosedInput.checked = dossier?.is_closed === true;
+  adminDossierOrderInput.value = dossier?.order ?? "";
+}
+
+function resetAdminDossierForm(debugOrder = false) {
+  adminDossiersState.selectedId = "";
+  adminDossiersState.selectedDossier = null;
+  populateAdminDossierForm({
+    id: "",
+    account_id: "",
+    label: "",
+    type: "ADULT",
+    visible: true,
+    is_closed: false,
+    order: getNextAdminDossierOrder(debugOrder),
+  });
+  updateAdminDossierDeleteButton();
+  renderAdminDossiersTable();
+}
+
+function collectAdminDossierFormData() {
+  const orderRaw = adminDossierOrderInput?.value.trim() || "";
+  const orderValue = Number(orderRaw);
+
+  return {
+    id: adminDossierIdInput?.value.trim() || null,
+    account_id: adminDossierAccountIdInput?.value.trim() || "",
+    label: adminDossierLabelInput?.value.trim() || "",
+    type: adminDossierTypeInput?.value.trim() || "",
+    visible: adminDossierVisibleInput?.checked === true,
+    is_closed: adminDossierIsClosedInput?.checked === true,
+    order: orderRaw === "" ? null : orderValue,
+  };
+}
+
+function getAdminDossierFormData() {
+  return collectAdminDossierFormData();
+}
+
+function validateAdminDossierFormData(formData) {
+  if (!formData.account_id) {
+    return "Account ID obbligatorio.";
+  }
+
+  if (!formData.label) {
+    return "Label obbligatoria.";
+  }
+
+  if (!["ADULT", "CHILD"].includes(formData.type)) {
+    return "Type deve essere ADULT o CHILD.";
+  }
+
+  if (!Number.isInteger(formData.order)) {
+    return "Order deve essere un numero intero.";
+  }
+
+  if (typeof formData.visible !== "boolean") {
+    return "Visible deve essere boolean.";
+  }
+
+  if (typeof formData.is_closed !== "boolean") {
+    return "Closed deve essere boolean.";
+  }
+
+  return "";
+}
+
+function buildAdminDossierPayload(formData) {
+  return {
+    account_id: formData.account_id,
+    label: formData.label,
+    type: formData.type,
+    visible: formData.visible,
+    is_closed: formData.is_closed,
+    order: formData.order,
+  };
+}
+
+async function loadAdminDossiers(options = {}) {
+  const resetWhenNoSelection = options.resetWhenNoSelection !== false;
+
+  if (!supabaseClient) {
+    setAdminDossiersState("Credenziali Supabase mancanti.", "error");
+    return;
+  }
+
+  setAdminDossiersState("Caricamento dossiers...");
+
+  try {
+    const { data, error } = await supabaseClient
+      .from("dossiers")
+      .select("id,account_id,label,type,visible,is_closed,order")
+      .order("order", { ascending: true, nullsFirst: false })
+      .order("label", { ascending: true });
+
+    if (error) {
+      setAdminDossiersState(`Errore lettura dossiers: ${error.message}`, "error");
+      return;
+    }
+
+    adminDossiersState.dossiers = sortAdminDossiers(data);
+    setAdminDossiersState("");
+    renderAdminDossiersTable();
+    if (resetWhenNoSelection && !adminDossiersState.selectedDossier) {
+      resetAdminDossierForm();
+    }
+  } catch (error) {
+    setAdminDossiersState(`Errore lettura dossiers: ${error.message || error}`, "error");
+  }
+}
+
+async function reloadAdminDossiersAfterSave(savedId) {
+  adminDossiersState.selectedId = savedId ? String(savedId) : "";
+  adminDossiersState.selectedDossier = null;
+
+  await loadAdminDossiers({ resetWhenNoSelection: false });
+
+  const savedDossier = (adminDossiersState.dossiers || [])
+    .find((dossier) => String(dossier.id ?? "") === String(savedId ?? ""));
+
+  if (savedDossier) {
+    adminDossiersState.selectedId = getAdminDossierRowKey(savedDossier);
+    adminDossiersState.selectedDossier = savedDossier;
+    populateAdminDossierForm(savedDossier);
+    updateAdminDossierDeleteButton();
+    renderAdminDossiersTable();
+  } else {
+    resetAdminDossierForm();
+  }
+}
+
+async function saveAdminDossier() {
+  if (!supabaseClient) {
+    alert("Credenziali Supabase mancanti.");
+    return;
+  }
+
+  const formData = collectAdminDossierFormData();
+  const validationMessage = validateAdminDossierFormData(formData);
+
+  if (validationMessage) {
+    alert(validationMessage);
+    return;
+  }
+
+  const payload = buildAdminDossierPayload(formData);
+
+  try {
+    const query = formData.id
+      ? supabaseClient
+        .from("dossiers")
+        .update(payload)
+        .eq("id", formData.id)
+        .select("id,account_id,label,type,visible,is_closed,order")
+        .single()
+      : supabaseClient
+        .from("dossiers")
+        .insert(payload)
+        .select("id,account_id,label,type,visible,is_closed,order")
+        .single();
+
+    const { data, error } = await query;
+
+    if (error) {
+      console.error("[Admin Dossiers] Errore salvataggio dossier:", {
+        mode: formData.id ? "update" : "insert",
+        formData,
+        payload,
+        error,
+      });
+      alert(`Errore salvataggio dossier: ${error.message || error}`);
+      return;
+    }
+
+    console.log("[Admin Dossiers] Dossier salvato:", data);
+    await reloadAdminDossiersAfterSave(data?.id ?? formData.id);
+  } catch (error) {
+    console.error("[Admin Dossiers] Errore imprevisto salvataggio dossier:", {
+      formData,
+      payload,
+      error,
+    });
+    alert(`Errore salvataggio dossier: ${error.message || error}`);
+  }
+}
+
+function openAdminDossierDeleteModal() {
+  if (!adminDossiersState.selectedDossier || !adminDossierDeleteModal) return;
+
+  adminDossierDeleteModal.classList.add("is-open");
+  adminDossierDeleteModal.setAttribute("aria-hidden", "false");
+}
+
+function closeAdminDossierDeleteModal() {
+  if (!adminDossierDeleteModal) return;
+
+  adminDossierDeleteModal.classList.remove("is-open");
+  adminDossierDeleteModal.setAttribute("aria-hidden", "true");
+}
+
+async function deleteAdminDossier() {
+  const selectedId = adminDossierIdInput?.value.trim() || adminDossiersState.selectedDossier?.id || "";
+
+  if (!selectedId) {
+    alert("Nessun dossier selezionato da eliminare.");
+    return;
+  }
+
+  if (!supabaseClient) {
+    alert("Credenziali Supabase mancanti.");
+    return;
+  }
+
+  if (adminDossierConfirmDeleteButton) {
+    adminDossierConfirmDeleteButton.disabled = true;
+    adminDossierConfirmDeleteButton.textContent = "Elimino...";
+  }
+
+  try {
+    const { error } = await supabaseClient
+      .from("dossiers")
+      .delete()
+      .eq("id", selectedId);
+
+    if (error) {
+      console.error("[Admin Dossiers] Errore eliminazione dossier:", {
+        id: selectedId,
+        record: adminDossiersState.selectedDossier,
+        error,
+      });
+      alert(`Errore eliminazione dossier: ${error.message || error}`);
+      return;
+    }
+
+    closeAdminDossierDeleteModal();
+    adminDossiersState.selectedId = "";
+    adminDossiersState.selectedDossier = null;
+    await loadAdminDossiers({ resetWhenNoSelection: false });
+    resetAdminDossierForm();
+  } catch (error) {
+    console.error("[Admin Dossiers] Errore imprevisto eliminazione dossier:", {
+      id: selectedId,
+      record: adminDossiersState.selectedDossier,
+      error,
+    });
+    alert(`Errore eliminazione dossier: ${error.message || error}`);
+  } finally {
+    if (adminDossierConfirmDeleteButton) {
+      adminDossierConfirmDeleteButton.disabled = false;
+      adminDossierConfirmDeleteButton.textContent = "Elimina";
+    }
+  }
+}
+
+function initAdminDossiersPage() {
+  if (!adminDossierForm || !adminDossiersTableBody) return;
+
+  adminDossierNewButton?.addEventListener("click", () => resetAdminDossierForm(true));
+  adminDossierDeleteButton?.addEventListener("click", openAdminDossierDeleteModal);
+  adminDossierCancelDeleteButton?.addEventListener("click", closeAdminDossierDeleteModal);
+  adminDossierConfirmDeleteButton?.addEventListener("click", deleteAdminDossier);
+  adminDossierDeleteModal?.addEventListener("click", (event) => {
+    if (event.target === adminDossierDeleteModal) {
+      closeAdminDossierDeleteModal();
+    }
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && adminDossierDeleteModal?.classList.contains("is-open")) {
+      closeAdminDossierDeleteModal();
+    }
+  });
+  adminDossierForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    saveAdminDossier();
+  });
+
+  resetAdminDossierForm();
+  loadAdminDossiers();
 }
 
 async function loadMovimenti() {
