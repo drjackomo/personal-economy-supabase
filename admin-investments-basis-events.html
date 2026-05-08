@@ -29,10 +29,9 @@
             <table id="admin-investments-basis-events-table" class="transactions-table admin-db-table">
               <thead>
                 <tr>
-                  <th>Date</th>
-                  <th>Dossier</th>
-                  <th>Amount</th>
-                  <th>Note</th>
+                  <th>Effective Date</th>
+                  <th>Account ID</th>
+                  <th>Cost Basis</th>
                 </tr>
               </thead>
               <tbody></tbody>
@@ -47,20 +46,16 @@
           <form id="admin-investments-basis-event-form" class="admin-db-form">
             <input id="admin-investments-basis-event-id" type="hidden">
             <label class="admin-db-field">
-              <span>Date</span>
-              <input id="admin-investments-basis-event-date" class="chart-input" type="date">
+              <span>Effective Date</span>
+              <input id="admin-investments-basis-event-effective-date" class="chart-input" type="date">
             </label>
             <label class="admin-db-field">
-              <span>Dossier</span>
-              <select id="admin-investments-basis-event-dossier-id" class="chart-input"></select>
+              <span>Account ID</span>
+              <select id="admin-investments-basis-event-account-id" class="chart-input"></select>
             </label>
             <label class="admin-db-field">
-              <span>Amount</span>
-              <input id="admin-investments-basis-event-amount" class="chart-input" type="text" inputmode="decimal">
-            </label>
-            <label class="admin-db-field">
-              <span>Note</span>
-              <textarea id="admin-investments-basis-event-note" class="chart-input admin-db-textarea" rows="4"></textarea>
+              <span>Cost Basis</span>
+              <input id="admin-investments-basis-event-cost-basis" class="chart-input" type="text" inputmode="decimal">
             </label>
             <div class="admin-db-form-actions">
               <button id="admin-investments-basis-event-new" class="chart-btn ghost" type="button">Nuovo</button>
@@ -84,6 +79,22 @@
         <div class="modal-actions">
           <button id="admin-investments-basis-event-cancel-delete" class="secondary-action" type="button">Annulla</button>
           <button id="admin-investments-basis-event-confirm-delete" class="danger-action" type="button">Elimina</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="admin-alert-modal" class="modal-overlay" aria-hidden="true">
+      <div class="modal-card admin-confirm-modal-card" role="dialog" aria-modal="true" aria-labelledby="admin-alert-title">
+        <div class="modal-header">
+          <div>
+            <h2 id="admin-alert-title">Attenzione</h2>
+            <p id="admin-alert-message" class="admin-confirm-message"></p>
+          </div>
+          <button id="admin-alert-close" class="modal-close" type="button" aria-label="Chiudi">&times;</button>
+        </div>
+
+        <div class="modal-actions">
+          <button id="admin-alert-ok" class="chart-btn" type="button">OK</button>
         </div>
       </div>
     </div>

@@ -2160,11 +2160,28 @@ button:disabled {
   gap: 6px;
 }
 
-.admin-db-field span {
+.admin-db-field span,
+.admin-db-check span {
   color: #475569;
   font-size: 12px;
   font-weight: 800;
   text-transform: uppercase;
+}
+
+.admin-db-field input[readonly] {
+  background: #f8fafc;
+  color: #64748b;
+}
+
+.admin-db-check {
+  display: inline-flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.admin-db-check input {
+  width: 16px;
+  height: 16px;
 }
 
 .admin-db-textarea {

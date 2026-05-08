@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="it">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="robots" content="noindex, nofollow, noarchive, nosnippet">
+    <title>Gestione Dossiers - Personal Economy</title>
+    <link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
+    <link rel="stylesheet" href="css/styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="js/app.js" defer></script>
+  </head>
+  <body>
+    <div id="navbar-root"></div>
+
+    <main id="admin-dossiers-page" class="app dashboard-page admin-page">
+      <div class="dashboard-heading">
+        <h1>Gestione DB</h1>
+        <p class="subtitle">Gestione amministrativa tabelle database</p>
+      </div>
+
+      <section class="admin-db-layout" aria-label="Gestione tabella dossiers">
+        <article class="dashboard-chart-section admin-db-table-card" aria-labelledby="admin-dossiers-table-title">
+          <div class="dashboard-chart-header">
+            <h2 id="admin-dossiers-table-title" class="chart-title">Tabella Dossiers</h2>
+          </div>
+          <div id="admin-dossiers-state" class="dashboard-chart-state is-visible" aria-live="polite">Caricamento dossiers...</div>
+          <div class="admin-db-table-wrap">
+            <table id="admin-dossiers-table" class="transactions-table admin-db-table">
+              <thead>
+                <tr>
+                  <th>Order</th>
+                  <th>Account ID</th>
+                  <th>Label</th>
+                  <th>Type</th>
+                  <th>Visible</th>
+                  <th>Closed</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </article>
+
+        <article class="dashboard-chart-section admin-db-form-card" aria-labelledby="admin-dossier-form-title">
+          <div class="dashboard-chart-header">
+            <h2 id="admin-dossier-form-title" class="chart-title">Dettaglio Dossier</h2>
+          </div>
+          <form id="admin-dossier-form" class="admin-db-form">
+            <input id="admin-dossier-id" type="hidden">
+            <label class="admin-db-field">
+              <span>Account ID</span>
+              <input id="admin-dossier-account-id" class="chart-input" type="text">
+            </label>
+            <label class="admin-db-field">
+              <span>Label</span>
+              <input id="admin-dossier-label" class="chart-input" type="text">
+            </label>
+            <label class="admin-db-field">
+              <span>Type</span>
+              <select id="admin-dossier-type" class="chart-input">
+                <option value="ADULT">ADULT</option>
+                <option value="CHILD">CHILD</option>
+              </select>
+            </label>
+            <label class="admin-db-field">
+              <span>Order</span>
+              <input id="admin-dossier-order" class="chart-input" type="number" step="1">
+            </label>
+            <label class="admin-db-check">
+              <input id="admin-dossier-visible" type="checkbox">
+              <span>Visible</span>
+            </label>
+            <label class="admin-db-check">
+              <input id="admin-dossier-is-closed" type="checkbox">
+              <span>Closed</span>
+            </label>
+            <div class="admin-db-form-actions">
+              <button id="admin-dossier-new" class="chart-btn ghost" type="button">Nuovo</button>
+              <button id="admin-dossier-delete" class="chart-btn danger" type="button" disabled>Elimina</button>
+              <button id="admin-dossier-save" class="chart-btn" type="submit">Salva</button>
+            </div>
+          </form>
+        </article>
+      </section>
+    </main>
+
+    <div id="admin-dossier-delete-modal" class="modal-overlay" aria-hidden="true">
+      <div class="modal-card admin-confirm-modal-card" role="dialog" aria-modal="true" aria-labelledby="admin-dossier-delete-title">
+        <div class="modal-header">
+          <div>
+            <h2 id="admin-dossier-delete-title">Eliminare dossier?</h2>
+            <p class="admin-confirm-message">Confermi l'eliminazione del dossier selezionato?</p>
+          </div>
+        </div>
+
+        <div class="modal-actions">
+          <button id="admin-dossier-cancel-delete" class="secondary-action" type="button">Annulla</button>
+          <button id="admin-dossier-confirm-delete" class="danger-action" type="button">Elimina</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="admin-alert-modal" class="modal-overlay" aria-hidden="true">
+      <div class="modal-card admin-confirm-modal-card" role="dialog" aria-modal="true" aria-labelledby="admin-alert-title">
+        <div class="modal-header">
+          <div>
+            <h2 id="admin-alert-title">Attenzione</h2>
+            <p id="admin-alert-message" class="admin-confirm-message"></p>
+          </div>
+          <button id="admin-alert-close" class="modal-close" type="button" aria-label="Chiudi">&times;</button>
+        </div>
+
+        <div class="modal-actions">
+          <button id="admin-alert-ok" class="chart-btn" type="button">OK</button>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>
