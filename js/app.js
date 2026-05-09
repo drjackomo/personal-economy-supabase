@@ -177,6 +177,23 @@ const adminPortfolioAssetDeleteButton = document.getElementById("admin-portfolio
 const adminPortfolioAssetDeleteModal = document.getElementById("admin-portfolio-asset-delete-modal");
 const adminPortfolioAssetCancelDeleteButton = document.getElementById("admin-portfolio-asset-cancel-delete");
 const adminPortfolioAssetConfirmDeleteButton = document.getElementById("admin-portfolio-asset-confirm-delete");
+const adminPortfolioBasisEventsPageRoot = document.getElementById("admin-portfolio-basis-events-page");
+const adminPortfolioBasisEventsStateElement = document.getElementById("admin-portfolio-basis-events-state");
+const adminPortfolioBasisEventsTableBody = document.querySelector("#admin-portfolio-basis-events-table tbody");
+const adminPortfolioBasisEventForm = document.getElementById("admin-portfolio-basis-event-form");
+const adminPortfolioBasisEventIdInput = document.getElementById("admin-portfolio-basis-event-id");
+const adminPortfolioBasisEventEffectiveDateInput = document.getElementById("admin-portfolio-basis-event-effective-date");
+const adminPortfolioBasisEventDossierSelect = document.getElementById("admin-portfolio-basis-event-dossier-id");
+const adminPortfolioBasisEventAssetSelect = document.getElementById("admin-portfolio-basis-event-asset");
+const adminPortfolioBasisEventIsinInput = document.getElementById("admin-portfolio-basis-event-isin");
+const adminPortfolioBasisEventAssetNameInput = document.getElementById("admin-portfolio-basis-event-asset-name");
+const adminPortfolioBasisEventCostBasisInput = document.getElementById("admin-portfolio-basis-event-cost-basis");
+const adminPortfolioBasisEventNoteInput = document.getElementById("admin-portfolio-basis-event-note");
+const adminPortfolioBasisEventNewButton = document.getElementById("admin-portfolio-basis-event-new");
+const adminPortfolioBasisEventDeleteButton = document.getElementById("admin-portfolio-basis-event-delete");
+const adminPortfolioBasisEventDeleteModal = document.getElementById("admin-portfolio-basis-event-delete-modal");
+const adminPortfolioBasisEventCancelDeleteButton = document.getElementById("admin-portfolio-basis-event-cancel-delete");
+const adminPortfolioBasisEventConfirmDeleteButton = document.getElementById("admin-portfolio-basis-event-confirm-delete");
 const adminDbSchemaPageRoot = document.getElementById("admin-db-schema-page");
 const adminDbSchemaStateElement = document.getElementById("admin-db-schema-state");
 const adminDbSchemaTableBody = document.querySelector("#admin-db-schema-table tbody");
@@ -289,6 +306,13 @@ let adminPortfolioAssetsState = {
   dossiers: [],
   selectedId: "",
   selectedAsset: null,
+};
+let adminPortfolioBasisEventsState = {
+  events: [],
+  dossiers: [],
+  assets: [],
+  selectedId: "",
+  selectedEvent: null,
 };
 let adminDbSchemaState = {
   rows: [],
@@ -605,6 +629,10 @@ async function initAuthenticatedApp(user) {
 
   if (adminPortfolioAssetsPageRoot) {
     initAdminPortfolioAssetsPage();
+  }
+
+  if (adminPortfolioBasisEventsPageRoot) {
+    initAdminPortfolioBasisEventsPage();
   }
 
   if (adminDbSchemaPageRoot) {
@@ -9094,6 +9122,436 @@ async function deleteAdminPortfolioAsset() {
   }
 }
 
+function getAdminPortfolioBasisEventRowKey(basisEvent) {
+  return String(basisEvent?.id ?? "");
+}
+
+function sortAdminPortfolioBasisEvents(events) {
+  return [...(events || [])].sort((first, second) => {
+    const firstDate = String(first?.effective_date || "");
+    const secondDate = String(second?.effective_date || "");
+
+    if (firstDate !== secondDate) {
+      return secondDate.localeCompare(firstDate);
+    }
+
+    const firstCreatedAt = String(first?.created_at || "");
+    const secondCreatedAt = String(second?.created_at || "");
+    return secondCreatedAt.localeCompare(firstCreatedAt);
+  });
+}
+
+function sortAdminPortfolioBasisAssets(assets) {
+  return [...(assets || [])].sort((first, second) => (
+    String(first?.asset_name || "").localeCompare(String(second?.asset_name || ""), "it", { sensitivity: "base" })
+  ));
+}
+
+function getAdminPortfolioBasisDossierLabel(dossierId) {
+  const dossier = (adminPortfolioBasisEventsState.dossiers || [])
+    .find((item) => String(item.account_id || "") === String(dossierId || ""));
+
+  return dossier?.label || dossierId || "—";
+}
+
+function getAdminPortfolioBasisFilteredAssets() {
+  const dossierId = adminPortfolioBasisEventDossierSelect?.value.trim() || "";
+  const assets = adminPortfolioBasisEventsState.assets || [];
+
+  if (!dossierId) return assets;
+
+  return assets.filter((asset) => String(asset?.dossier_id || "") === dossierId);
+}
+
+function renderAdminPortfolioBasisDossierOptions() {
+  if (!adminPortfolioBasisEventDossierSelect) return;
+
+  const currentValue = adminPortfolioBasisEventDossierSelect.value;
+  adminPortfolioBasisEventDossierSelect.textContent = "";
+
+  const emptyOption = document.createElement("option");
+  emptyOption.value = "";
+  emptyOption.textContent = "Seleziona dossier";
+  adminPortfolioBasisEventDossierSelect.appendChild(emptyOption);
+
+  adminPortfolioBasisEventsState.dossiers.forEach((dossier) => {
+    const option = document.createElement("option");
+    option.value = String(dossier.account_id || "");
+    option.textContent = String(dossier.label || dossier.account_id || "");
+    adminPortfolioBasisEventDossierSelect.appendChild(option);
+  });
+
+  if (currentValue && adminPortfolioBasisEventsState.dossiers.some((dossier) => String(dossier.account_id || "") === currentValue)) {
+    adminPortfolioBasisEventDossierSelect.value = currentValue;
+  }
+}
+
+function renderAdminPortfolioBasisAssetOptions(selectedIsin = "") {
+  if (!adminPortfolioBasisEventAssetSelect) return;
+
+  const currentValue = selectedIsin || adminPortfolioBasisEventAssetSelect.value;
+  const filteredAssets = getAdminPortfolioBasisFilteredAssets();
+  adminPortfolioBasisEventAssetSelect.textContent = "";
+
+  const emptyOption = document.createElement("option");
+  emptyOption.value = "";
+  emptyOption.textContent = "Seleziona asset";
+  adminPortfolioBasisEventAssetSelect.appendChild(emptyOption);
+
+  filteredAssets.forEach((asset) => {
+    const isin = String(asset?.isin || "");
+    const assetName = String(asset?.asset_name || "");
+    const option = document.createElement("option");
+
+    option.value = isin;
+    option.textContent = `${assetName || "Asset"} - ${isin || "ISIN"}`;
+    option.dataset.assetName = assetName;
+    adminPortfolioBasisEventAssetSelect.appendChild(option);
+  });
+
+  if (currentValue && filteredAssets.some((asset) => String(asset?.isin || "") === currentValue)) {
+    adminPortfolioBasisEventAssetSelect.value = currentValue;
+  }
+}
+
+function applyAdminPortfolioBasisSelectedAsset() {
+  if (!adminPortfolioBasisEventAssetSelect) return;
+
+  const selectedOption = adminPortfolioBasisEventAssetSelect.selectedOptions?.[0];
+
+  if (!selectedOption?.value) return;
+
+  if (adminPortfolioBasisEventIsinInput) {
+    adminPortfolioBasisEventIsinInput.value = selectedOption.value;
+  }
+
+  if (adminPortfolioBasisEventAssetNameInput) {
+    adminPortfolioBasisEventAssetNameInput.value = selectedOption.dataset.assetName || "";
+  }
+}
+
+function updateAdminPortfolioBasisEventDeleteButton() {
+  if (!adminPortfolioBasisEventDeleteButton) return;
+
+  adminPortfolioBasisEventDeleteButton.disabled = !adminPortfolioBasisEventsState.selectedEvent;
+}
+
+function renderAdminPortfolioBasisEventsTable() {
+  if (!adminPortfolioBasisEventsTableBody) return;
+
+  const sortedEvents = sortAdminPortfolioBasisEvents(adminPortfolioBasisEventsState.events);
+  adminPortfolioBasisEventsTableBody.textContent = "";
+
+  if (!sortedEvents.length) {
+    const row = document.createElement("tr");
+    const cell = document.createElement("td");
+
+    cell.colSpan = 6;
+    cell.textContent = "Nessun evento trovato.";
+    row.appendChild(cell);
+    adminPortfolioBasisEventsTableBody.appendChild(row);
+    return;
+  }
+
+  sortedEvents.forEach((basisEvent) => {
+    const row = document.createElement("tr");
+    const rowKey = getAdminPortfolioBasisEventRowKey(basisEvent);
+
+    row.dataset.eventId = rowKey;
+    row.classList.toggle("is-selected", rowKey === adminPortfolioBasisEventsState.selectedId);
+
+    appendAdminTableCell(row, formatDashboardDate(basisEvent.effective_date));
+    appendAdminTableCell(row, getAdminPortfolioBasisDossierLabel(basisEvent.dossier_id));
+    appendAdminTableCell(row, basisEvent.isin);
+    appendAdminTableCell(row, basisEvent.asset_name);
+    appendAdminTableCell(row, formatEuro(basisEvent.cost_basis), "num");
+    appendAdminTableCell(row, basisEvent.note);
+
+    row.addEventListener("click", () => {
+      adminPortfolioBasisEventsState.selectedId = rowKey;
+      adminPortfolioBasisEventsState.selectedEvent = basisEvent;
+      populateAdminPortfolioBasisEventForm(basisEvent);
+      updateAdminPortfolioBasisEventDeleteButton();
+      renderAdminPortfolioBasisEventsTable();
+    });
+
+    adminPortfolioBasisEventsTableBody.appendChild(row);
+  });
+}
+
+function populateAdminPortfolioBasisEventForm(basisEvent) {
+  if (
+    !adminPortfolioBasisEventIdInput ||
+    !adminPortfolioBasisEventEffectiveDateInput ||
+    !adminPortfolioBasisEventDossierSelect ||
+    !adminPortfolioBasisEventIsinInput ||
+    !adminPortfolioBasisEventAssetNameInput ||
+    !adminPortfolioBasisEventCostBasisInput ||
+    !adminPortfolioBasisEventNoteInput
+  ) {
+    return;
+  }
+
+  adminPortfolioBasisEventIdInput.value = basisEvent?.id ?? "";
+  adminPortfolioBasisEventEffectiveDateInput.value = basisEvent?.effective_date ?? "";
+  adminPortfolioBasisEventDossierSelect.value = basisEvent?.dossier_id ?? "";
+  renderAdminPortfolioBasisAssetOptions(basisEvent?.isin ?? "");
+  adminPortfolioBasisEventIsinInput.value = basisEvent?.isin ?? "";
+  adminPortfolioBasisEventAssetNameInput.value = basisEvent?.asset_name ?? "";
+  adminPortfolioBasisEventCostBasisInput.value = formatAdminItalianNumberInput(basisEvent?.cost_basis);
+  adminPortfolioBasisEventNoteInput.value = basisEvent?.note ?? "";
+}
+
+function resetAdminPortfolioBasisEventForm() {
+  adminPortfolioBasisEventsState.selectedId = "";
+  adminPortfolioBasisEventsState.selectedEvent = null;
+  populateAdminPortfolioBasisEventForm({
+    id: "",
+    effective_date: "",
+    dossier_id: "",
+    isin: "",
+    asset_name: "",
+    cost_basis: "",
+    note: "",
+  });
+  updateAdminPortfolioBasisEventDeleteButton();
+  renderAdminPortfolioBasisEventsTable();
+}
+
+function collectAdminPortfolioBasisEventFormData() {
+  return {
+    id: adminPortfolioBasisEventIdInput?.value.trim() || null,
+    effective_date: adminPortfolioBasisEventEffectiveDateInput?.value.trim() || "",
+    dossier_id: adminPortfolioBasisEventDossierSelect?.value.trim() || "",
+    isin: adminPortfolioBasisEventIsinInput?.value.trim() || "",
+    asset_name: adminPortfolioBasisEventAssetNameInput?.value.trim() || "",
+    cost_basis: parseAdminItalianNumber(adminPortfolioBasisEventCostBasisInput?.value),
+    note: adminPortfolioBasisEventNoteInput?.value.trim() || null,
+  };
+}
+
+function validateAdminPortfolioBasisEventFormData(formData) {
+  if (!formData.effective_date) return "Effective Date obbligatoria.";
+  if (!formData.dossier_id) return "Dossier obbligatorio.";
+  if (!formData.isin) return "ISIN obbligatorio.";
+  if (!formData.asset_name) return "Asset Name obbligatorio.";
+  if (!Number.isFinite(formData.cost_basis)) return "Cost Basis obbligatorio e numerico.";
+
+  return "";
+}
+
+function buildAdminPortfolioBasisEventPayload(formData) {
+  return {
+    effective_date: formData.effective_date,
+    dossier_id: formData.dossier_id,
+    isin: formData.isin,
+    asset_name: formData.asset_name,
+    cost_basis: formData.cost_basis,
+    note: formData.note,
+  };
+}
+
+async function loadAdminPortfolioBasisEvents(options = {}) {
+  const resetWhenNoSelection = options.resetWhenNoSelection !== false;
+
+  if (!supabaseClient) {
+    setAdminState(adminPortfolioBasisEventsStateElement, "Credenziali Supabase mancanti.", "error");
+    return;
+  }
+
+  setAdminState(adminPortfolioBasisEventsStateElement, "Caricamento eventi...");
+
+  try {
+    const [eventsResult, dossiersResult, assetsResult] = await Promise.all([
+      supabaseClient
+        .from("portfolio_basis_events")
+        .select("id,created_at,effective_date,dossier_id,isin,asset_name,cost_basis,note")
+        .order("effective_date", { ascending: false })
+        .order("created_at", { ascending: false }),
+      supabaseClient
+        .from("dossiers")
+        .select("account_id,label,order,is_closed")
+        .eq("is_closed", false)
+        .order("order", { ascending: true, nullsFirst: false })
+        .order("label", { ascending: true }),
+      supabaseClient
+        .from("portfolio_assets")
+        .select("dossier_id,isin,asset_name,visible,is_closed")
+        .eq("visible", true)
+        .eq("is_closed", false)
+        .order("asset_name", { ascending: true }),
+    ]);
+
+    if (eventsResult.error || dossiersResult.error || assetsResult.error) {
+      console.error("[Admin Portfolio Basis] Errore caricamento dati:", {
+        eventsError: eventsResult.error,
+        dossiersError: dossiersResult.error,
+        assetsError: assetsResult.error,
+      });
+      setAdminState(
+        adminPortfolioBasisEventsStateElement,
+        `Errore caricamento dati: ${(eventsResult.error || dossiersResult.error || assetsResult.error)?.message}`,
+        "error",
+      );
+      return;
+    }
+
+    adminPortfolioBasisEventsState.events = sortAdminPortfolioBasisEvents(eventsResult.data);
+    adminPortfolioBasisEventsState.dossiers = sortAdminPortfolioAssetDossiers(dossiersResult.data);
+    adminPortfolioBasisEventsState.assets = sortAdminPortfolioBasisAssets(assetsResult.data);
+    setAdminState(adminPortfolioBasisEventsStateElement, "");
+    renderAdminPortfolioBasisDossierOptions();
+    renderAdminPortfolioBasisAssetOptions();
+    renderAdminPortfolioBasisEventsTable();
+
+    if (resetWhenNoSelection && !adminPortfolioBasisEventsState.selectedEvent) {
+      resetAdminPortfolioBasisEventForm();
+    }
+  } catch (error) {
+    console.error("[Admin Portfolio Basis] Errore imprevisto caricamento dati:", error);
+    setAdminState(adminPortfolioBasisEventsStateElement, `Errore caricamento dati: ${error.message || error}`, "error");
+  }
+}
+
+async function reloadAdminPortfolioBasisEventsAfterSave(savedId) {
+  adminPortfolioBasisEventsState.selectedId = savedId ? String(savedId) : "";
+  adminPortfolioBasisEventsState.selectedEvent = null;
+
+  await loadAdminPortfolioBasisEvents({ resetWhenNoSelection: false });
+
+  const savedEvent = (adminPortfolioBasisEventsState.events || [])
+    .find((basisEvent) => String(basisEvent.id ?? "") === String(savedId ?? ""));
+
+  if (savedEvent) {
+    adminPortfolioBasisEventsState.selectedId = getAdminPortfolioBasisEventRowKey(savedEvent);
+    adminPortfolioBasisEventsState.selectedEvent = savedEvent;
+    populateAdminPortfolioBasisEventForm(savedEvent);
+    updateAdminPortfolioBasisEventDeleteButton();
+    renderAdminPortfolioBasisEventsTable();
+  } else {
+    resetAdminPortfolioBasisEventForm();
+  }
+}
+
+async function saveAdminPortfolioBasisEvent() {
+  if (!supabaseClient) {
+    showAdminAlertModal("Attenzione", "Credenziali Supabase mancanti.");
+    return;
+  }
+
+  const formData = collectAdminPortfolioBasisEventFormData();
+  const validationMessage = validateAdminPortfolioBasisEventFormData(formData);
+
+  if (validationMessage) {
+    showAdminAlertModal("Attenzione", validationMessage);
+    return;
+  }
+
+  const payload = buildAdminPortfolioBasisEventPayload(formData);
+  const selectColumns = "id,created_at,effective_date,dossier_id,isin,asset_name,cost_basis,note";
+
+  try {
+    const query = formData.id
+      ? supabaseClient
+        .from("portfolio_basis_events")
+        .update(payload)
+        .eq("id", formData.id)
+        .select(selectColumns)
+        .single()
+      : supabaseClient
+        .from("portfolio_basis_events")
+        .insert(payload)
+        .select(selectColumns)
+        .single();
+
+    const { data, error } = await query;
+
+    if (error) {
+      console.error("[Admin Portfolio Basis] Errore salvataggio evento:", {
+        mode: formData.id ? "update" : "insert",
+        formData,
+        payload,
+        error,
+      });
+      showAdminAlertModal("Attenzione", `Errore salvataggio evento: ${error.message || error}`);
+      return;
+    }
+
+    await reloadAdminPortfolioBasisEventsAfterSave(data?.id ?? formData.id);
+  } catch (error) {
+    console.error("[Admin Portfolio Basis] Errore imprevisto salvataggio evento:", {
+      formData,
+      payload,
+      error,
+    });
+    showAdminAlertModal("Attenzione", `Errore salvataggio evento: ${error.message || error}`);
+  }
+}
+
+function openAdminPortfolioBasisEventDeleteModal() {
+  if (!adminPortfolioBasisEventsState.selectedEvent) return;
+
+  openAdminModal(adminPortfolioBasisEventDeleteModal);
+}
+
+function closeAdminPortfolioBasisEventDeleteModal() {
+  closeAdminModal(adminPortfolioBasisEventDeleteModal);
+}
+
+async function deleteAdminPortfolioBasisEvent() {
+  const selectedId = adminPortfolioBasisEventIdInput?.value.trim() || adminPortfolioBasisEventsState.selectedEvent?.id || "";
+
+  if (!selectedId) {
+    showAdminAlertModal("Attenzione", "Nessun evento selezionato da eliminare.");
+    return;
+  }
+
+  if (!supabaseClient) {
+    showAdminAlertModal("Attenzione", "Credenziali Supabase mancanti.");
+    return;
+  }
+
+  if (adminPortfolioBasisEventConfirmDeleteButton) {
+    adminPortfolioBasisEventConfirmDeleteButton.disabled = true;
+    adminPortfolioBasisEventConfirmDeleteButton.textContent = "Elimino...";
+  }
+
+  try {
+    const { error } = await supabaseClient
+      .from("portfolio_basis_events")
+      .delete()
+      .eq("id", selectedId);
+
+    if (error) {
+      console.error("[Admin Portfolio Basis] Errore eliminazione evento:", {
+        id: selectedId,
+        record: adminPortfolioBasisEventsState.selectedEvent,
+        error,
+      });
+      showAdminAlertModal("Attenzione", `Errore eliminazione evento: ${error.message || error}`);
+      return;
+    }
+
+    closeAdminPortfolioBasisEventDeleteModal();
+    adminPortfolioBasisEventsState.selectedId = "";
+    adminPortfolioBasisEventsState.selectedEvent = null;
+    await loadAdminPortfolioBasisEvents({ resetWhenNoSelection: false });
+    resetAdminPortfolioBasisEventForm();
+  } catch (error) {
+    console.error("[Admin Portfolio Basis] Errore imprevisto eliminazione evento:", {
+      id: selectedId,
+      record: adminPortfolioBasisEventsState.selectedEvent,
+      error,
+    });
+    showAdminAlertModal("Attenzione", `Errore eliminazione evento: ${error.message || error}`);
+  } finally {
+    if (adminPortfolioBasisEventConfirmDeleteButton) {
+      adminPortfolioBasisEventConfirmDeleteButton.disabled = false;
+      adminPortfolioBasisEventConfirmDeleteButton.textContent = "Elimina";
+    }
+  }
+}
+
 function initAdminDossiersPage() {
   if (!adminDossierForm || !adminDossiersTableBody) return;
 
@@ -9173,6 +9631,37 @@ function initAdminPortfolioAssetsPage() {
 
   resetAdminPortfolioAssetForm();
   loadAdminPortfolioAssets();
+}
+
+function initAdminPortfolioBasisEventsPage() {
+  if (!adminPortfolioBasisEventForm || !adminPortfolioBasisEventsTableBody) return;
+
+  initAdminAlertModal();
+  adminPortfolioBasisEventNewButton?.addEventListener("click", resetAdminPortfolioBasisEventForm);
+  adminPortfolioBasisEventDeleteButton?.addEventListener("click", openAdminPortfolioBasisEventDeleteModal);
+  adminPortfolioBasisEventCancelDeleteButton?.addEventListener("click", closeAdminPortfolioBasisEventDeleteModal);
+  adminPortfolioBasisEventConfirmDeleteButton?.addEventListener("click", deleteAdminPortfolioBasisEvent);
+  adminPortfolioBasisEventDeleteModal?.addEventListener("click", (event) => {
+    if (event.target === adminPortfolioBasisEventDeleteModal) {
+      closeAdminPortfolioBasisEventDeleteModal();
+    }
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && adminPortfolioBasisEventDeleteModal?.classList.contains("is-open")) {
+      closeAdminPortfolioBasisEventDeleteModal();
+    }
+  });
+  adminPortfolioBasisEventDossierSelect?.addEventListener("change", () => {
+    renderAdminPortfolioBasisAssetOptions();
+  });
+  adminPortfolioBasisEventAssetSelect?.addEventListener("change", applyAdminPortfolioBasisSelectedAsset);
+  adminPortfolioBasisEventForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    saveAdminPortfolioBasisEvent();
+  });
+
+  resetAdminPortfolioBasisEventForm();
+  loadAdminPortfolioBasisEvents();
 }
 
 function initAdminDbSchemaPage() {
