@@ -2225,6 +2225,37 @@ button:disabled {
   color: #334155;
 }
 
+.admin-boolean-status {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  min-height: 22px;
+  padding: 3px 9px;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.admin-boolean-status.is-visible-true,
+.admin-boolean-status.is-closed-false {
+  border: 1px solid #bbf7d0;
+  background: #f0fdf4;
+  color: #15803d;
+}
+
+.admin-boolean-status.is-visible-false {
+  border: 1px solid #cbd5e1;
+  background: #334155;
+  color: #ffffff;
+}
+
+.admin-boolean-status.is-closed-true {
+  border: 1px solid #fecaca;
+  background: #fef2f2;
+  color: #b91c1c;
+}
+
 .admin-db-schema-default {
   max-width: 380px;
   color: #475569;

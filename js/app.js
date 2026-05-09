@@ -162,6 +162,21 @@ const adminInvestmentsBasisEventDeleteButton = document.getElementById("admin-in
 const adminInvestmentsBasisEventDeleteModal = document.getElementById("admin-investments-basis-event-delete-modal");
 const adminInvestmentsBasisEventCancelDeleteButton = document.getElementById("admin-investments-basis-event-cancel-delete");
 const adminInvestmentsBasisEventConfirmDeleteButton = document.getElementById("admin-investments-basis-event-confirm-delete");
+const adminPortfolioAssetsPageRoot = document.getElementById("admin-portfolio-assets-page");
+const adminPortfolioAssetsStateElement = document.getElementById("admin-portfolio-assets-state");
+const adminPortfolioAssetsTableBody = document.querySelector("#admin-portfolio-assets-table tbody");
+const adminPortfolioAssetForm = document.getElementById("admin-portfolio-asset-form");
+const adminPortfolioAssetIdInput = document.getElementById("admin-portfolio-asset-id");
+const adminPortfolioAssetNameInput = document.getElementById("admin-portfolio-asset-name");
+const adminPortfolioAssetIsinInput = document.getElementById("admin-portfolio-asset-isin");
+const adminPortfolioAssetDossierSelect = document.getElementById("admin-portfolio-asset-dossier-id");
+const adminPortfolioAssetVisibleInput = document.getElementById("admin-portfolio-asset-visible");
+const adminPortfolioAssetIsClosedInput = document.getElementById("admin-portfolio-asset-is-closed");
+const adminPortfolioAssetNewButton = document.getElementById("admin-portfolio-asset-new");
+const adminPortfolioAssetDeleteButton = document.getElementById("admin-portfolio-asset-delete");
+const adminPortfolioAssetDeleteModal = document.getElementById("admin-portfolio-asset-delete-modal");
+const adminPortfolioAssetCancelDeleteButton = document.getElementById("admin-portfolio-asset-cancel-delete");
+const adminPortfolioAssetConfirmDeleteButton = document.getElementById("admin-portfolio-asset-confirm-delete");
 const adminDbSchemaPageRoot = document.getElementById("admin-db-schema-page");
 const adminDbSchemaStateElement = document.getElementById("admin-db-schema-state");
 const adminDbSchemaTableBody = document.querySelector("#admin-db-schema-table tbody");
@@ -268,6 +283,12 @@ let adminInvestmentsBasisEventsState = {
   dossiers: [],
   selectedId: "",
   selectedEvent: null,
+};
+let adminPortfolioAssetsState = {
+  assets: [],
+  dossiers: [],
+  selectedId: "",
+  selectedAsset: null,
 };
 let adminDbSchemaState = {
   rows: [],
@@ -580,6 +601,10 @@ async function initAuthenticatedApp(user) {
 
   if (adminInvestmentsBasisEventsPageRoot) {
     initAdminInvestmentsBasisEventsPage();
+  }
+
+  if (adminPortfolioAssetsPageRoot) {
+    initAdminPortfolioAssetsPage();
   }
 
   if (adminDbSchemaPageRoot) {
@@ -7845,8 +7870,8 @@ function renderAdminDossiersTable() {
     appendAdminTableCell(row, dossier.account_id);
     appendAdminTableCell(row, dossier.label);
     appendAdminTableCell(row, dossier.type);
-    appendAdminTableCell(row, formatAdminBoolean(dossier.visible));
-    appendAdminTableCell(row, formatAdminBoolean(dossier.is_closed));
+    appendAdminTableElementCell(row, formatAdminBooleanStatus("visible", dossier.visible));
+    appendAdminTableElementCell(row, formatAdminBooleanStatus("closed", dossier.is_closed));
 
     row.addEventListener("click", () => {
       adminDossiersState.selectedId = rowKey;
@@ -8692,6 +8717,383 @@ async function deleteAdminInvestmentsBasisEvent() {
   }
 }
 
+function getAdminPortfolioAssetRowKey(asset) {
+  return String(asset?.id ?? "");
+}
+
+function sortAdminPortfolioAssets(assets) {
+  return [...(assets || [])].sort((first, second) => {
+    const createdAtCompare = String(second?.created_at || "").localeCompare(String(first?.created_at || ""));
+    if (createdAtCompare !== 0) return createdAtCompare;
+
+    return String(first?.asset_name || "").localeCompare(String(second?.asset_name || ""), "it", { sensitivity: "base" });
+  });
+}
+
+function sortAdminPortfolioAssetDossiers(dossiers) {
+  return [...(dossiers || [])]
+    .filter((dossier) => dossier?.is_closed !== true)
+    .sort((first, second) => {
+      const firstOrder = Number(first?.order);
+      const secondOrder = Number(second?.order);
+
+      if (Number.isFinite(firstOrder) && Number.isFinite(secondOrder) && firstOrder !== secondOrder) {
+        return firstOrder - secondOrder;
+      }
+
+      if (Number.isFinite(firstOrder) && !Number.isFinite(secondOrder)) return -1;
+      if (!Number.isFinite(firstOrder) && Number.isFinite(secondOrder)) return 1;
+
+      return String(first?.label || "").localeCompare(String(second?.label || ""), "it", { sensitivity: "base" });
+    });
+}
+
+function getAdminPortfolioAssetDossierLabel(dossierId) {
+  const dossier = (adminPortfolioAssetsState.dossiers || [])
+    .find((item) => String(item.account_id || "") === String(dossierId || ""));
+
+  return dossier?.label || dossierId || "—";
+}
+
+function renderAdminPortfolioAssetDossierOptions() {
+  if (!adminPortfolioAssetDossierSelect) return;
+
+  const currentValue = adminPortfolioAssetDossierSelect.value;
+  adminPortfolioAssetDossierSelect.textContent = "";
+
+  const emptyOption = document.createElement("option");
+  emptyOption.value = "";
+  emptyOption.textContent = "Seleziona dossier";
+  adminPortfolioAssetDossierSelect.appendChild(emptyOption);
+
+  adminPortfolioAssetsState.dossiers.forEach((dossier) => {
+    const option = document.createElement("option");
+    option.value = String(dossier.account_id || "");
+    option.textContent = String(dossier.label || dossier.account_id || "");
+    adminPortfolioAssetDossierSelect.appendChild(option);
+  });
+
+  if (currentValue && adminPortfolioAssetsState.dossiers.some((dossier) => String(dossier.account_id || "") === currentValue)) {
+    adminPortfolioAssetDossierSelect.value = currentValue;
+  }
+}
+
+function updateAdminPortfolioAssetDeleteButton() {
+  if (!adminPortfolioAssetDeleteButton) return;
+
+  adminPortfolioAssetDeleteButton.disabled = !adminPortfolioAssetsState.selectedAsset;
+}
+
+function formatAdminBooleanStatus(type, value) {
+  const badge = document.createElement("span");
+  const isActive = value === true;
+
+  badge.className = `admin-boolean-status is-${type}-${isActive ? "true" : "false"}`;
+  badge.textContent = type === "visible"
+    ? (isActive ? "Visibile" : "Nascosto")
+    : (isActive ? "Chiuso" : "Attivo");
+
+  return badge;
+}
+
+function renderAdminPortfolioAssetsTable() {
+  if (!adminPortfolioAssetsTableBody) return;
+
+  const sortedAssets = sortAdminPortfolioAssets(adminPortfolioAssetsState.assets);
+  adminPortfolioAssetsTableBody.textContent = "";
+
+  if (!sortedAssets.length) {
+    const row = document.createElement("tr");
+    const cell = document.createElement("td");
+
+    cell.colSpan = 5;
+    cell.textContent = "Nessun asset trovato.";
+    row.appendChild(cell);
+    adminPortfolioAssetsTableBody.appendChild(row);
+    return;
+  }
+
+  sortedAssets.forEach((asset) => {
+    const row = document.createElement("tr");
+    const rowKey = getAdminPortfolioAssetRowKey(asset);
+
+    row.dataset.assetId = rowKey;
+    row.classList.toggle("is-selected", rowKey === adminPortfolioAssetsState.selectedId);
+
+    appendAdminTableCell(row, asset.asset_name);
+    appendAdminTableCell(row, asset.isin);
+    appendAdminTableCell(row, getAdminPortfolioAssetDossierLabel(asset.dossier_id));
+    appendAdminTableElementCell(row, formatAdminBooleanStatus("visible", asset.visible));
+    appendAdminTableElementCell(row, formatAdminBooleanStatus("closed", asset.is_closed));
+
+    row.addEventListener("click", () => {
+      adminPortfolioAssetsState.selectedId = rowKey;
+      adminPortfolioAssetsState.selectedAsset = asset;
+      populateAdminPortfolioAssetForm(asset);
+      updateAdminPortfolioAssetDeleteButton();
+      renderAdminPortfolioAssetsTable();
+    });
+
+    adminPortfolioAssetsTableBody.appendChild(row);
+  });
+}
+
+function populateAdminPortfolioAssetForm(asset) {
+  if (
+    !adminPortfolioAssetIdInput ||
+    !adminPortfolioAssetNameInput ||
+    !adminPortfolioAssetIsinInput ||
+    !adminPortfolioAssetDossierSelect ||
+    !adminPortfolioAssetVisibleInput ||
+    !adminPortfolioAssetIsClosedInput
+  ) {
+    return;
+  }
+
+  adminPortfolioAssetIdInput.value = asset?.id ?? "";
+  adminPortfolioAssetNameInput.value = asset?.asset_name ?? "";
+  adminPortfolioAssetIsinInput.value = asset?.isin ?? "";
+  adminPortfolioAssetDossierSelect.value = asset?.dossier_id ?? "";
+  adminPortfolioAssetVisibleInput.checked = asset?.visible === true;
+  adminPortfolioAssetIsClosedInput.checked = asset?.is_closed === true;
+}
+
+function resetAdminPortfolioAssetForm() {
+  adminPortfolioAssetsState.selectedId = "";
+  adminPortfolioAssetsState.selectedAsset = null;
+  populateAdminPortfolioAssetForm({
+    id: "",
+    asset_name: "",
+    isin: "",
+    dossier_id: "",
+    visible: true,
+    is_closed: false,
+  });
+  updateAdminPortfolioAssetDeleteButton();
+  renderAdminPortfolioAssetsTable();
+}
+
+function collectAdminPortfolioAssetFormData() {
+  return {
+    id: adminPortfolioAssetIdInput?.value.trim() || null,
+    asset_name: adminPortfolioAssetNameInput?.value.trim() || "",
+    isin: adminPortfolioAssetIsinInput?.value.trim() || "",
+    dossier_id: adminPortfolioAssetDossierSelect?.value.trim() || "",
+    visible: adminPortfolioAssetVisibleInput?.checked === true,
+    is_closed: adminPortfolioAssetIsClosedInput?.checked === true,
+  };
+}
+
+function validateAdminPortfolioAssetFormData(formData) {
+  if (!formData.asset_name) return "Asset Name obbligatorio.";
+  if (!formData.isin) return "ISIN obbligatorio.";
+  if (!formData.dossier_id) return "Dossier obbligatorio.";
+
+  return "";
+}
+
+function buildAdminPortfolioAssetPayload(formData) {
+  return {
+    asset_name: formData.asset_name,
+    isin: formData.isin,
+    dossier_id: formData.dossier_id,
+    visible: formData.visible,
+    is_closed: formData.is_closed,
+  };
+}
+
+async function loadAdminPortfolioAssets(options = {}) {
+  const resetWhenNoSelection = options.resetWhenNoSelection !== false;
+
+  if (!supabaseClient) {
+    setAdminState(adminPortfolioAssetsStateElement, "Credenziali Supabase mancanti.", "error");
+    return;
+  }
+
+  setAdminState(adminPortfolioAssetsStateElement, "Caricamento assets...");
+
+  try {
+    const [assetsResult, dossiersResult] = await Promise.all([
+      supabaseClient
+        .from("portfolio_assets")
+        .select("id,created_at,asset_name,isin,dossier_id,is_closed,visible")
+        .order("created_at", { ascending: false })
+        .order("asset_name", { ascending: true }),
+      supabaseClient
+        .from("dossiers")
+        .select("account_id,label,order,is_closed")
+        .eq("is_closed", false)
+        .order("order", { ascending: true, nullsFirst: false })
+        .order("label", { ascending: true }),
+    ]);
+
+    if (assetsResult.error || dossiersResult.error) {
+      console.error("[Admin Portfolio Assets] Errore caricamento dati:", {
+        assetsError: assetsResult.error,
+        dossiersError: dossiersResult.error,
+      });
+      setAdminState(
+        adminPortfolioAssetsStateElement,
+        `Errore caricamento dati: ${(assetsResult.error || dossiersResult.error)?.message}`,
+        "error",
+      );
+      return;
+    }
+
+    adminPortfolioAssetsState.assets = sortAdminPortfolioAssets(assetsResult.data);
+    adminPortfolioAssetsState.dossiers = sortAdminPortfolioAssetDossiers(dossiersResult.data);
+    setAdminState(adminPortfolioAssetsStateElement, "");
+    renderAdminPortfolioAssetDossierOptions();
+    renderAdminPortfolioAssetsTable();
+
+    if (resetWhenNoSelection && !adminPortfolioAssetsState.selectedAsset) {
+      resetAdminPortfolioAssetForm();
+    }
+  } catch (error) {
+    console.error("[Admin Portfolio Assets] Errore imprevisto caricamento dati:", error);
+    setAdminState(adminPortfolioAssetsStateElement, `Errore caricamento dati: ${error.message || error}`, "error");
+  }
+}
+
+async function reloadAdminPortfolioAssetsAfterSave(savedId) {
+  adminPortfolioAssetsState.selectedId = savedId ? String(savedId) : "";
+  adminPortfolioAssetsState.selectedAsset = null;
+
+  await loadAdminPortfolioAssets({ resetWhenNoSelection: false });
+
+  const savedAsset = (adminPortfolioAssetsState.assets || [])
+    .find((asset) => String(asset.id ?? "") === String(savedId ?? ""));
+
+  if (savedAsset) {
+    adminPortfolioAssetsState.selectedId = getAdminPortfolioAssetRowKey(savedAsset);
+    adminPortfolioAssetsState.selectedAsset = savedAsset;
+    populateAdminPortfolioAssetForm(savedAsset);
+    updateAdminPortfolioAssetDeleteButton();
+    renderAdminPortfolioAssetsTable();
+  } else {
+    resetAdminPortfolioAssetForm();
+  }
+}
+
+async function saveAdminPortfolioAsset() {
+  if (!supabaseClient) {
+    showAdminAlertModal("Attenzione", "Credenziali Supabase mancanti.");
+    return;
+  }
+
+  const formData = collectAdminPortfolioAssetFormData();
+  const validationMessage = validateAdminPortfolioAssetFormData(formData);
+
+  if (validationMessage) {
+    showAdminAlertModal("Attenzione", validationMessage);
+    return;
+  }
+
+  const payload = buildAdminPortfolioAssetPayload(formData);
+  const selectColumns = "id,created_at,asset_name,isin,dossier_id,is_closed,visible";
+
+  try {
+    const query = formData.id
+      ? supabaseClient
+        .from("portfolio_assets")
+        .update(payload)
+        .eq("id", formData.id)
+        .select(selectColumns)
+        .single()
+      : supabaseClient
+        .from("portfolio_assets")
+        .insert(payload)
+        .select(selectColumns)
+        .single();
+
+    const { data, error } = await query;
+
+    if (error) {
+      console.error("[Admin Portfolio Assets] Errore salvataggio asset:", {
+        mode: formData.id ? "update" : "insert",
+        formData,
+        payload,
+        error,
+      });
+      showAdminAlertModal("Attenzione", `Errore salvataggio asset: ${error.message || error}`);
+      return;
+    }
+
+    await reloadAdminPortfolioAssetsAfterSave(data?.id ?? formData.id);
+  } catch (error) {
+    console.error("[Admin Portfolio Assets] Errore imprevisto salvataggio asset:", {
+      formData,
+      payload,
+      error,
+    });
+    showAdminAlertModal("Attenzione", `Errore salvataggio asset: ${error.message || error}`);
+  }
+}
+
+function openAdminPortfolioAssetDeleteModal() {
+  if (!adminPortfolioAssetsState.selectedAsset) return;
+
+  openAdminModal(adminPortfolioAssetDeleteModal);
+}
+
+function closeAdminPortfolioAssetDeleteModal() {
+  closeAdminModal(adminPortfolioAssetDeleteModal);
+}
+
+async function deleteAdminPortfolioAsset() {
+  const selectedId = adminPortfolioAssetIdInput?.value.trim() || adminPortfolioAssetsState.selectedAsset?.id || "";
+
+  if (!selectedId) {
+    showAdminAlertModal("Attenzione", "Nessun asset selezionato da eliminare.");
+    return;
+  }
+
+  if (!supabaseClient) {
+    showAdminAlertModal("Attenzione", "Credenziali Supabase mancanti.");
+    return;
+  }
+
+  if (adminPortfolioAssetConfirmDeleteButton) {
+    adminPortfolioAssetConfirmDeleteButton.disabled = true;
+    adminPortfolioAssetConfirmDeleteButton.textContent = "Elimino...";
+  }
+
+  try {
+    const { error } = await supabaseClient
+      .from("portfolio_assets")
+      .delete()
+      .eq("id", selectedId);
+
+    if (error) {
+      console.error("[Admin Portfolio Assets] Errore eliminazione asset:", {
+        id: selectedId,
+        record: adminPortfolioAssetsState.selectedAsset,
+        error,
+      });
+      showAdminAlertModal("Attenzione", `Errore eliminazione asset: ${error.message || error}`);
+      return;
+    }
+
+    closeAdminPortfolioAssetDeleteModal();
+    adminPortfolioAssetsState.selectedId = "";
+    adminPortfolioAssetsState.selectedAsset = null;
+    await loadAdminPortfolioAssets({ resetWhenNoSelection: false });
+    resetAdminPortfolioAssetForm();
+  } catch (error) {
+    console.error("[Admin Portfolio Assets] Errore imprevisto eliminazione asset:", {
+      id: selectedId,
+      record: adminPortfolioAssetsState.selectedAsset,
+      error,
+    });
+    showAdminAlertModal("Attenzione", `Errore eliminazione asset: ${error.message || error}`);
+  } finally {
+    if (adminPortfolioAssetConfirmDeleteButton) {
+      adminPortfolioAssetConfirmDeleteButton.disabled = false;
+      adminPortfolioAssetConfirmDeleteButton.textContent = "Elimina";
+    }
+  }
+}
+
 function initAdminDossiersPage() {
   if (!adminDossierForm || !adminDossiersTableBody) return;
 
@@ -8744,6 +9146,33 @@ function initAdminInvestmentsBasisEventsPage() {
 
   resetAdminInvestmentsBasisEventForm();
   loadAdminInvestmentsBasisEvents();
+}
+
+function initAdminPortfolioAssetsPage() {
+  if (!adminPortfolioAssetForm || !adminPortfolioAssetsTableBody) return;
+
+  initAdminAlertModal();
+  adminPortfolioAssetNewButton?.addEventListener("click", resetAdminPortfolioAssetForm);
+  adminPortfolioAssetDeleteButton?.addEventListener("click", openAdminPortfolioAssetDeleteModal);
+  adminPortfolioAssetCancelDeleteButton?.addEventListener("click", closeAdminPortfolioAssetDeleteModal);
+  adminPortfolioAssetConfirmDeleteButton?.addEventListener("click", deleteAdminPortfolioAsset);
+  adminPortfolioAssetDeleteModal?.addEventListener("click", (event) => {
+    if (event.target === adminPortfolioAssetDeleteModal) {
+      closeAdminPortfolioAssetDeleteModal();
+    }
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && adminPortfolioAssetDeleteModal?.classList.contains("is-open")) {
+      closeAdminPortfolioAssetDeleteModal();
+    }
+  });
+  adminPortfolioAssetForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    saveAdminPortfolioAsset();
+  });
+
+  resetAdminPortfolioAssetForm();
+  loadAdminPortfolioAssets();
 }
 
 function initAdminDbSchemaPage() {

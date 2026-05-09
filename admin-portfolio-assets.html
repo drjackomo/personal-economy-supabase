@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="it">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="robots" content="noindex, nofollow, noarchive, nosnippet">
+    <title>Portfolio Assets - Personal Economy</title>
+    <link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
+    <link rel="stylesheet" href="css/styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="js/app.js" defer></script>
+  </head>
+  <body>
+    <div id="navbar-root"></div>
+
+    <main id="admin-portfolio-assets-page" class="app dashboard-page admin-page">
+      <div class="dashboard-heading">
+        <h1>Portfolio Assets</h1>
+        <p class="subtitle">Gestione asset portfolio</p>
+      </div>
+
+      <section class="admin-db-layout" aria-label="Gestione portfolio assets">
+        <article class="dashboard-chart-section admin-db-table-card" aria-labelledby="admin-portfolio-assets-table-title">
+          <div class="dashboard-chart-header">
+            <h2 id="admin-portfolio-assets-table-title" class="chart-title">Tabella Portfolio Assets</h2>
+          </div>
+          <div id="admin-portfolio-assets-state" class="dashboard-chart-state is-visible" aria-live="polite">Caricamento assets...</div>
+          <div class="admin-db-table-wrap">
+            <table id="admin-portfolio-assets-table" class="transactions-table admin-db-table">
+              <thead>
+                <tr>
+                  <th>Asset Name</th>
+                  <th>ISIN</th>
+                  <th>Dossier</th>
+                  <th>Visible</th>
+                  <th>Closed</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </article>
+
+        <article class="dashboard-chart-section admin-db-form-card" aria-labelledby="admin-portfolio-asset-form-title">
+          <div class="dashboard-chart-header">
+            <h2 id="admin-portfolio-asset-form-title" class="chart-title">Dettaglio Asset</h2>
+          </div>
+          <form id="admin-portfolio-asset-form" class="admin-db-form">
+            <input id="admin-portfolio-asset-id" type="hidden">
+            <label class="admin-db-field">
+              <span>Asset Name</span>
+              <input id="admin-portfolio-asset-name" class="chart-input" type="text">
+            </label>
+            <label class="admin-db-field">
+              <span>ISIN</span>
+              <input id="admin-portfolio-asset-isin" class="chart-input" type="text">
+            </label>
+            <label class="admin-db-field">
+              <span>Dossier</span>
+              <select id="admin-portfolio-asset-dossier-id" class="chart-input"></select>
+            </label>
+            <label class="admin-db-check">
+              <input id="admin-portfolio-asset-visible" type="checkbox">
+              <span>Visible</span>
+            </label>
+            <label class="admin-db-check">
+              <input id="admin-portfolio-asset-is-closed" type="checkbox">
+              <span>Closed</span>
+            </label>
+            <div class="admin-db-form-actions">
+              <button id="admin-portfolio-asset-new" class="chart-btn ghost" type="button">Nuovo</button>
+              <button id="admin-portfolio-asset-delete" class="chart-btn danger" type="button" disabled>Elimina</button>
+              <button id="admin-portfolio-asset-save" class="chart-btn" type="submit">Salva</button>
+            </div>
+          </form>
+        </article>
+      </section>
+    </main>
+
+    <div id="admin-portfolio-asset-delete-modal" class="modal-overlay" aria-hidden="true">
+      <div class="modal-card admin-confirm-modal-card" role="dialog" aria-modal="true" aria-labelledby="admin-portfolio-asset-delete-title">
+        <div class="modal-header">
+          <div>
+            <h2 id="admin-portfolio-asset-delete-title">Eliminare asset?</h2>
+            <p class="admin-confirm-message">Confermi l'eliminazione dell'asset selezionato?</p>
+          </div>
+        </div>
+
+        <div class="modal-actions">
+          <button id="admin-portfolio-asset-cancel-delete" class="secondary-action" type="button">Annulla</button>
+          <button id="admin-portfolio-asset-confirm-delete" class="danger-action" type="button">Elimina</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="admin-alert-modal" class="modal-overlay" aria-hidden="true">
+      <div class="modal-card admin-confirm-modal-card" role="dialog" aria-modal="true" aria-labelledby="admin-alert-title">
+        <div class="modal-header">
+          <div>
+            <h2 id="admin-alert-title">Attenzione</h2>
+            <p id="admin-alert-message" class="admin-confirm-message"></p>
+          </div>
+          <button id="admin-alert-close" class="modal-close" type="button" aria-label="Chiudi">&times;</button>
+        </div>
+
+        <div class="modal-actions">
+          <button id="admin-alert-ok" class="chart-btn" type="button">OK</button>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>
