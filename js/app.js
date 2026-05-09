@@ -12,6 +12,8 @@ const movimentiTableElement = document.getElementById("movimenti-table");
 const movimentiMonthSelect = document.getElementById("movimenti-month");
 const movimentiYearSelect = document.getElementById("movimenti-year");
 const applyMovimentiFilterButton = document.getElementById("apply-movimenti-filter");
+const movimentiPrevMonthButton = document.getElementById("movimenti-prev-month");
+const movimentiNextMonthButton = document.getElementById("movimenti-next-month");
 const yearlyTotalElement = document.getElementById("yearly-total");
 const yearlyIncomeElement = document.getElementById("yearly-income");
 const yearlyExpenseElement = document.getElementById("yearly-expense");
@@ -641,6 +643,7 @@ async function initAuthenticatedApp(user) {
 
   if (movimentiTableElement && movimentiMonthSelect && movimentiYearSelect && applyMovimentiFilterButton) {
     initMovimentiFilters();
+    initMovimentiMonthNavigation();
     if (
       movementModal &&
       movementModalTitle &&
@@ -3326,6 +3329,39 @@ function initMovimentiFilters() {
   movimentiYearSelect.value = String(currentYear);
 }
 
+function ensureMovimentiYearOption(year) {
+  const yearValue = String(year);
+  if (Array.from(movimentiYearSelect.options).some((option) => option.value === yearValue)) return;
+
+  const option = document.createElement("option");
+  option.value = yearValue;
+  option.textContent = yearValue;
+  movimentiYearSelect.appendChild(option);
+  Array.from(movimentiYearSelect.options)
+    .sort((first, second) => Number(second.value) - Number(first.value))
+    .forEach((sortedOption) => movimentiYearSelect.appendChild(sortedOption));
+}
+
+function changeMovimentiMonth(delta) {
+  const currentMonth = Number(movimentiMonthSelect.value);
+  const currentYear = Number(movimentiYearSelect.value);
+  if (!Number.isFinite(currentMonth) || !Number.isFinite(currentYear)) return;
+
+  const date = new Date(currentYear, currentMonth + delta, 1);
+  const nextMonth = date.getMonth();
+  const nextYear = date.getFullYear();
+
+  ensureMovimentiYearOption(nextYear);
+  movimentiMonthSelect.value = String(nextMonth);
+  movimentiYearSelect.value = String(nextYear);
+  loadMovimenti();
+}
+
+function initMovimentiMonthNavigation() {
+  movimentiPrevMonthButton?.addEventListener("click", () => changeMovimentiMonth(-1));
+  movimentiNextMonthButton?.addEventListener("click", () => changeMovimentiMonth(1));
+}
+
 async function openMovementModal() {
   const today = new Date().toISOString().split("T")[0];
   modalMode = "create";
@@ -4390,13 +4426,19 @@ function getTitoliDossierOrder(dossier) {
 }
 
 function getTitoliDossierImportEnabled(dossier) {
+  const dossierKeys = [
+    getTitoliDossierId(dossier),
+    getTitoliDossierLabel(dossier),
+  ].map((key) => String(key || "").trim().toUpperCase());
+  const isFinecoImportDossier = dossierKeys.some((key) => ["JACK ADV+", "JACK MAIN"].includes(key));
   const value = getFirstDefined(dossier, ["import", "can_import", "excel_import"], false);
-  if (value === true || value === false) return value;
-  if (value === 1) return true;
-  if (value === 0) return false;
+  if (value === true || value === 1) return true;
+  if (value === false || value === 0) return isFinecoImportDossier;
 
   const text = String(value ?? "").trim().toLowerCase();
-  return ["true", "1", "yes", "y", "si", "s"].includes(text);
+  if (["true", "1", "yes", "y", "si", "s"].includes(text)) return true;
+
+  return isFinecoImportDossier;
 }
 
 function isTitoliDossierActive(dossier) {
@@ -4634,6 +4676,7 @@ function renderTitoliWeekPicker() {
   titoliWeekPicker.appendChild(previousButton);
   titoliWeekPicker.appendChild(daysWrapper);
   titoliWeekPicker.appendChild(nextButton);
+  updateTitoliGrandTotal();
 }
 
 function getTitoliSnapshotTime(snapshot) {
@@ -4700,10 +4743,56 @@ function findLatestTitoliSnapshot(asset, dossierId, latestSnapshots) {
   );
 }
 
+function getTitoliCardCurrentTotal(card) {
+  return Array.from(card.querySelectorAll(".titoli-market-input"))
+    .reduce((total, input) => total + (parseTitoliValue(input.value) ?? 0), 0);
+}
+
+function formatTitoliSummaryEuro(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return "-";
+
+  const formatted = new Intl.NumberFormat("it-IT", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+    useGrouping: true,
+  }).format(number);
+
+  return `${formatted} €`;
+}
+
+function updateTitoliGrandTotal() {
+  const summaryElement = document.querySelector(".titoli-grand-total");
+  const grandTotalElement = summaryElement?.querySelector("[data-titoli-grand-total]");
+  const jackTotalElement = summaryElement?.querySelector("[data-titoli-grand-total-jack]");
+  const figliTotalElement = summaryElement?.querySelector("[data-titoli-grand-total-figli]");
+  const dateElement = summaryElement?.querySelector("[data-titoli-grand-total-date]");
+  if (!grandTotalElement) return;
+
+  let grandTotal = 0;
+  let jackTotal = 0;
+  let figliTotal = 0;
+
+  Array.from(titoliInsertRoot.querySelectorAll(".titoli-dossier-card")).forEach((card) => {
+    const cardTotal = getTitoliCardCurrentTotal(card);
+    grandTotal += cardTotal;
+
+    if (card.dataset.dossierSummaryGroup === "jack") {
+      jackTotal += cardTotal;
+    } else if (card.dataset.dossierSummaryGroup === "figli") {
+      figliTotal += cardTotal;
+    }
+  });
+
+  grandTotalElement.textContent = formatTitoliSummaryEuro(grandTotal);
+  if (jackTotalElement) jackTotalElement.textContent = formatTitoliSummaryEuro(jackTotal);
+  if (figliTotalElement) figliTotalElement.textContent = formatTitoliSummaryEuro(figliTotal);
+  if (dateElement) dateElement.textContent = formatTitoliLastReadDate(getTitoliSnapshotDateValue()) || "--";
+}
+
 function updateTotals(card) {
-  const inputs = Array.from(card.querySelectorAll(".titoli-market-input"));
   const initialTotal = Number(card.dataset.initialTotal || 0);
-  const currentTotal = inputs.reduce((total, input) => total + (parseTitoliValue(input.value) ?? 0), 0);
+  const currentTotal = getTitoliCardCurrentTotal(card);
   const delta = currentTotal - initialTotal;
   const previousTotalElement = card.querySelector(".titoli-total-previous strong");
   const currentTotalElement = card.querySelector(".titoli-total-current strong");
@@ -4723,6 +4812,8 @@ function updateTotals(card) {
     deltaElement.textContent = "";
     deltaElement.classList.add("value-neutral");
   }
+
+  updateTitoliGrandTotal();
 }
 
 function updateTitoliDossierTotals(card) {
@@ -5182,6 +5273,108 @@ function createTitoliDossierHeader(dossier, dossierIndex, latestSnapshotDates) {
   return header;
 }
 
+function getTitoliDossierSummaryGroup(dossier) {
+  const dossierKeys = [
+    getTitoliDossierId(dossier),
+    getTitoliDossierLabel(dossier),
+  ].map((key) => String(key || "").trim().toUpperCase());
+
+  if (dossierKeys.some((key) => ["JACK ADV+", "JACK MAIN"].includes(key))) return "jack";
+  if (dossierKeys.some((key) => ["SIMONE", "ERICA"].includes(key))) return "figli";
+
+  const type = String(getFirstDefined(dossier, ["type", "tipo"], "")).trim().toUpperCase();
+  if (type === "ADULT") return "jack";
+  if (type === "CHILD") return "figli";
+
+  return "";
+}
+
+function createTitoliSummaryIcon(paths) {
+  const icon = document.createElement("span");
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+
+  icon.className = "titoli-grand-total-icon";
+  icon.setAttribute("aria-hidden", "true");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("focusable", "false");
+
+  paths.forEach((pathData) => {
+    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    path.setAttribute("d", pathData);
+    svg.appendChild(path);
+  });
+
+  icon.appendChild(svg);
+  return icon;
+}
+
+function createTitoliGrandTotalSummary() {
+  const summary = document.createElement("article");
+  const content = document.createElement("div");
+  const dateGroup = document.createElement("div");
+  const dateIcon = createTitoliSummaryIcon([
+    "M8 2v4",
+    "M16 2v4",
+    "M3.5 9h17",
+    "M5.5 4h13a2 2 0 0 1 2 2v13a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z",
+  ]);
+  const date = document.createElement("span");
+  const totalGroup = document.createElement("div");
+  const value = document.createElement("strong");
+  const jackSplit = document.createElement("div");
+  const figliSplit = document.createElement("div");
+  const jackIcon = createTitoliSummaryIcon([
+    "M20 21a8 8 0 0 0-16 0",
+    "M12 13a5 5 0 1 0 0-10 5 5 0 0 0 0 10Z",
+  ]);
+  const figliIcon = createTitoliSummaryIcon([
+    "M16 20a6 6 0 0 0-12 0",
+    "M10 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z",
+    "M22 20a5 5 0 0 0-6-4.9",
+    "M16 4.4a3.5 3.5 0 0 1 0 6.8",
+  ]);
+  const jackLabel = document.createElement("span");
+  const figliLabel = document.createElement("span");
+  const jackValue = document.createElement("strong");
+  const figliValue = document.createElement("strong");
+
+  summary.className = "titoli-grand-total";
+  content.className = "titoli-grand-total-content";
+  dateGroup.className = "titoli-grand-total-item titoli-grand-total-date-item";
+  date.className = "titoli-grand-total-date";
+  totalGroup.className = "titoli-grand-total-item titoli-grand-total-main";
+  value.className = "titoli-grand-total-value";
+  jackSplit.className = "titoli-grand-total-item titoli-grand-total-split";
+  figliSplit.className = "titoli-grand-total-item titoli-grand-total-split";
+  date.dataset.titoliGrandTotalDate = "true";
+  date.textContent = formatTitoliLastReadDate(getTitoliSnapshotDateValue()) || "--";
+  value.dataset.titoliGrandTotal = "true";
+  value.textContent = formatTitoliSummaryEuro(0);
+  jackLabel.textContent = "Jack";
+  figliLabel.textContent = "Figli";
+  jackValue.dataset.titoliGrandTotalJack = "true";
+  figliValue.dataset.titoliGrandTotalFigli = "true";
+  jackValue.textContent = formatTitoliSummaryEuro(0);
+  figliValue.textContent = formatTitoliSummaryEuro(0);
+
+  dateGroup.appendChild(dateIcon);
+  dateGroup.appendChild(date);
+  totalGroup.appendChild(value);
+  jackSplit.appendChild(jackLabel);
+  jackSplit.insertBefore(jackIcon, jackLabel);
+  jackSplit.appendChild(jackValue);
+  figliSplit.appendChild(figliLabel);
+  figliSplit.insertBefore(figliIcon, figliLabel);
+  figliSplit.appendChild(figliValue);
+  content.appendChild(dateGroup);
+  content.appendChild(totalGroup);
+  content.appendChild(jackSplit);
+  content.appendChild(figliSplit);
+  summary.appendChild(content);
+
+  return summary;
+}
+
 function renderTitoliInsertCards(dossiers, assets, snapshots) {
   const activeDossiers = dossiers.filter(isTitoliDossierActive).sort(sortTitoliDossiers);
   const activeAssets = assets.filter(isTitoliAssetActive).sort(sortTitoliAssets);
@@ -5198,6 +5391,7 @@ function renderTitoliInsertCards(dossiers, assets, snapshots) {
   });
 
   titoliInsertRoot.textContent = "";
+  document.querySelector(".titoli-grand-total")?.remove();
 
   if (!activeDossiers.length) {
     renderTitoliInsertState("empty-state", "Nessun dossier attivo trovato.");
@@ -5208,6 +5402,7 @@ function renderTitoliInsertCards(dossiers, assets, snapshots) {
   const leftColumn = document.createElement("div");
   const rightColumn = document.createElement("div");
   const bottomLayout = document.createElement("div");
+  const grandTotalSummary = createTitoliGrandTotalSummary();
   const saveAllContainer = document.createElement("div");
   const saveAllButton = document.createElement("button");
 
@@ -5235,6 +5430,7 @@ function renderTitoliInsertCards(dossiers, assets, snapshots) {
     card.className = "titoli-dossier-card";
     card.dataset.dossierIndex = String(dossierIndex);
     card.dataset.dossierId = dossierId;
+    card.dataset.dossierSummaryGroup = getTitoliDossierSummaryGroup(dossier);
     body.className = "titoli-dossier-body";
     body.classList.toggle("two-columns", dossierIndex === 0 || dossierIndex === 1);
     list.className = "titoli-assets-list";
@@ -5281,9 +5477,11 @@ function renderTitoliInsertCards(dossiers, assets, snapshots) {
   rightColumn.appendChild(bottomLayout);
   mainLayout.appendChild(leftColumn);
   mainLayout.appendChild(rightColumn);
+  titoliWeekPicker?.closest(".titoli-week-card")?.before(grandTotalSummary);
   titoliInsertRoot.appendChild(mainLayout);
   saveAllContainer.appendChild(saveAllButton);
   titoliInsertRoot.appendChild(saveAllContainer);
+  updateTitoliGrandTotal();
   bindImportButtons(titoliInsertRoot);
   bindTitoliSavePlaceholders(titoliInsertRoot);
 }
@@ -9685,6 +9883,8 @@ async function loadMovimenti() {
 
   const { startDate, endDateExclusive } = getMovimentiDateRange();
   applyMovimentiFilterButton.disabled = true;
+  if (movimentiPrevMonthButton) movimentiPrevMonthButton.disabled = true;
+  if (movimentiNextMonthButton) movimentiNextMonthButton.disabled = true;
   applyMovimentiFilterButton.textContent = "Carico...";
   renderMovimentiState("loading-state", "Caricamento movimenti...", true);
   const summariesPromise = loadMovimentiSummaries();
@@ -9709,6 +9909,8 @@ async function loadMovimenti() {
   } finally {
     await summariesPromise;
     applyMovimentiFilterButton.disabled = false;
+    if (movimentiPrevMonthButton) movimentiPrevMonthButton.disabled = false;
+    if (movimentiNextMonthButton) movimentiNextMonthButton.disabled = false;
     applyMovimentiFilterButton.textContent = "Applica";
   }
 }

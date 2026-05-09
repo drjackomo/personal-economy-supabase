@@ -609,6 +609,129 @@ h2 {
   margin-top: 2px;
 }
 
+.titoli-grand-total {
+  --titoli-summary-accent: #16a34a;
+  position: relative;
+  overflow: hidden;
+  width: fit-content;
+  max-width: min(60%, 100%);
+  margin: 16px 0 20px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 18px 42px rgba(15, 23, 42, 0.09);
+  padding: 18px 34px 18px 42px;
+}
+
+.titoli-grand-total::before {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 6px;
+  border-radius: 18px 0 0 18px;
+  background: var(--titoli-summary-accent);
+  content: "";
+}
+
+.titoli-grand-total-content {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0;
+  align-items: center;
+  min-height: 56px;
+}
+
+.titoli-grand-total-item {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
+  gap: 14px;
+  align-items: center;
+  min-height: 48px;
+  padding: 0 36px;
+}
+
+.titoli-grand-total-item:first-child {
+  padding-left: 6px;
+}
+
+.titoli-grand-total-item + .titoli-grand-total-item::before {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 1px;
+  height: 44px;
+  background: rgba(203, 213, 225, 0.42);
+  content: "";
+  transform: translateY(-50%);
+}
+
+.titoli-grand-total-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 15px;
+  color: #94a3b8;
+  line-height: 1;
+  opacity: 0.82;
+}
+
+.titoli-grand-total-icon svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.75;
+}
+
+.titoli-grand-total-date {
+  flex: 0 0 auto;
+  color: #7b8798;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.titoli-grand-total-main {
+  padding-left: 44px;
+  padding-right: 44px;
+}
+
+.titoli-grand-total-value {
+  flex: 0 0 auto;
+  color: #050b16;
+  font-size: 38px;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.titoli-grand-total-split {
+  color: #718096;
+}
+
+.titoli-grand-total-split span {
+  color: #7b8798;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.titoli-grand-total-split strong {
+  color: #1f2937;
+  font-size: 16px;
+  font-weight: 780;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+
 .titoli-main-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
@@ -2005,6 +2128,12 @@ button:disabled {
   padding: 9px 10px;
 }
 
+.movimenti-month-nav {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+}
+
 .movimenti-filter-toolbar button {
   display: inline-flex;
   align-items: center;
@@ -2013,6 +2142,28 @@ button:disabled {
   border-radius: 10px;
   background: #2563eb;
   padding: 10px 16px;
+}
+
+.movimenti-filter-toolbar .movimenti-month-nav-button {
+  width: 40px;
+  min-width: 40px;
+  height: 40px;
+  border: 1px solid rgba(148, 163, 184, 0.32);
+  background: #ffffff;
+  box-shadow: 0 6px 14px rgba(15, 23, 42, 0.055);
+  color: #475569;
+  padding: 0;
+}
+
+.movimenti-filter-toolbar .movimenti-month-nav-button:hover {
+  border-color: rgba(96, 165, 250, 0.46);
+  background: #f8fafc;
+  color: #1d4ed8;
+}
+
+.movimenti-filter-toolbar .movimenti-month-nav-button:focus-visible {
+  outline: 3px solid rgba(59, 130, 246, 0.22);
+  outline-offset: 2px;
 }
 
 .movimenti-filter-toolbar button svg {
@@ -2927,6 +3078,10 @@ td.in-totals-column {
   .revolut-summary-box {
     grid-template-columns: 1fr;
   }
+
+  .titoli-grand-total-content {
+    row-gap: 8px;
+  }
 }
 
 @media (max-width: 640px) {
@@ -2962,6 +3117,22 @@ td.in-totals-column {
 
   .chart-toggle-btn {
     flex: 1;
+  }
+
+  .titoli-grand-total {
+    max-width: 100%;
+  }
+
+  .titoli-grand-total-item {
+    padding-left: 0;
+  }
+
+  .titoli-grand-total-item + .titoli-grand-total-item::before {
+    display: none;
+  }
+
+  .titoli-grand-total-value {
+    font-size: 26px;
   }
 
   .dossier-detail-card[aria-labelledby="dossier-table-title"] .dossier-card-filters,
