@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="it">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="robots" content="noindex, nofollow, noarchive, nosnippet">
+    <title>Schema Database - Personal Economy</title>
+    <link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
+    <link rel="stylesheet" href="css/styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="js/app.js" defer></script>
+  </head>
+  <body>
+    <div id="navbar-root"></div>
+
+    <main id="admin-db-schema-page" class="app dashboard-page admin-page">
+      <div class="dashboard-heading">
+        <h1>Schema Database</h1>
+        <p class="subtitle">Struttura live del database Supabase</p>
+      </div>
+
+      <section class="admin-db-schema-layout" aria-label="Schema database Supabase">
+        <article class="dashboard-chart-section admin-db-table-card admin-db-schema-card" aria-labelledby="admin-db-schema-table-title">
+          <div class="dashboard-chart-header">
+            <h2 id="admin-db-schema-table-title" class="chart-title">Colonne Database</h2>
+          </div>
+
+          <div class="admin-db-schema-toolbar" aria-label="Filtri schema database">
+            <label class="admin-db-field admin-db-schema-filter">
+              <span>Tabella</span>
+              <select id="admin-db-schema-table-filter" class="chart-input">
+                <option value="">Tutte le tabelle</option>
+              </select>
+            </label>
+            <label class="admin-db-field admin-db-schema-filter admin-db-schema-search-filter">
+              <span>Ricerca</span>
+              <input id="admin-db-schema-search" class="chart-input" type="search" placeholder="Cerca tabella, colonna o tipo">
+            </label>
+            <button id="admin-db-schema-copy" class="chart-btn admin-db-schema-copy" type="button">Copia schema</button>
+          </div>
+
+          <div id="admin-db-schema-state" class="dashboard-chart-state is-visible" aria-live="polite">Caricamento schema...</div>
+          <div class="admin-db-table-wrap admin-db-schema-table-wrap">
+            <table id="admin-db-schema-table" class="transactions-table admin-db-table admin-db-schema-table">
+              <thead>
+                <tr>
+                  <th>Table</th>
+                  <th>Position</th>
+                  <th>Column</th>
+                  <th>Type</th>
+                  <th>Nullable</th>
+                  <th>Default</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </article>
+      </section>
+    </main>
+  </body>
+</html>

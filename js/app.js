@@ -162,6 +162,12 @@ const adminInvestmentsBasisEventDeleteButton = document.getElementById("admin-in
 const adminInvestmentsBasisEventDeleteModal = document.getElementById("admin-investments-basis-event-delete-modal");
 const adminInvestmentsBasisEventCancelDeleteButton = document.getElementById("admin-investments-basis-event-cancel-delete");
 const adminInvestmentsBasisEventConfirmDeleteButton = document.getElementById("admin-investments-basis-event-confirm-delete");
+const adminDbSchemaPageRoot = document.getElementById("admin-db-schema-page");
+const adminDbSchemaStateElement = document.getElementById("admin-db-schema-state");
+const adminDbSchemaTableBody = document.querySelector("#admin-db-schema-table tbody");
+const adminDbSchemaTableFilter = document.getElementById("admin-db-schema-table-filter");
+const adminDbSchemaSearchInput = document.getElementById("admin-db-schema-search");
+const adminDbSchemaCopyButton = document.getElementById("admin-db-schema-copy");
 const adminAlertModal = document.getElementById("admin-alert-modal");
 const adminAlertTitle = document.getElementById("admin-alert-title");
 const adminAlertMessage = document.getElementById("admin-alert-message");
@@ -262,6 +268,12 @@ let adminInvestmentsBasisEventsState = {
   dossiers: [],
   selectedId: "",
   selectedEvent: null,
+};
+let adminDbSchemaState = {
+  rows: [],
+  filteredRows: [],
+  selectedTable: "",
+  searchTerm: "",
 };
 
 const supabaseClient = hasCredentials && window.supabase
@@ -568,6 +580,10 @@ async function initAuthenticatedApp(user) {
 
   if (adminInvestmentsBasisEventsPageRoot) {
     initAdminInvestmentsBasisEventsPage();
+  }
+
+  if (adminDbSchemaPageRoot) {
+    initAdminDbSchemaPage();
   }
 
   if (movimentiTableElement && movimentiMonthSelect && movimentiYearSelect && applyMovimentiFilterButton) {
@@ -7690,6 +7706,13 @@ function appendAdminTableCell(row, value, className = "") {
   row.appendChild(cell);
 }
 
+function appendAdminTableElementCell(row, element, className = "") {
+  const cell = document.createElement("td");
+  if (className) cell.className = className;
+  cell.appendChild(element);
+  row.appendChild(cell);
+}
+
 function openAdminModal(modal) {
   if (!modal) return;
 
@@ -7873,6 +7896,208 @@ function resetAdminDossierForm(debugOrder = false) {
   });
   updateAdminDossierDeleteButton();
   renderAdminDossiersTable();
+}
+
+function sortDatabaseSchemaRows(rows) {
+  return [...(rows || [])].sort((first, second) => {
+    const tableCompare = String(first?.table_name || "").localeCompare(String(second?.table_name || ""), "it", { sensitivity: "base" });
+    if (tableCompare !== 0) return tableCompare;
+
+    return Number(first?.ordinal_position || 0) - Number(second?.ordinal_position || 0);
+  });
+}
+
+function getDatabaseSchemaTables(rows) {
+  return Array.from(new Set((rows || [])
+    .map((row) => String(row?.table_name || "").trim())
+    .filter(Boolean)))
+    .sort((first, second) => first.localeCompare(second, "it", { sensitivity: "base" }));
+}
+
+function formatDatabaseSchemaNullable(value) {
+  return String(value || "").toUpperCase() === "YES" ? "Yes" : "No";
+}
+
+function createDatabaseSchemaBadge(text, className) {
+  const badge = document.createElement("span");
+  badge.className = className;
+  badge.textContent = text || "—";
+  return badge;
+}
+
+function escapeDatabaseSchemaMarkdownCell(value) {
+  return String(value === null || value === undefined || value === "" ? "—" : value)
+    .replace(/\r?\n/g, " ")
+    .replace(/\|/g, "\\|")
+    .trim();
+}
+
+function buildDatabaseSchemaMarkdown() {
+  const rows = sortDatabaseSchemaRows(adminDbSchemaState.rows);
+  const tableNames = getDatabaseSchemaTables(rows);
+  const lines = ["# Database Schema", ""];
+
+  tableNames.forEach((tableName, index) => {
+    const tableRows = rows.filter((row) => String(row?.table_name || "") === tableName);
+
+    if (index > 0) lines.push("");
+    lines.push(`## ${tableName}`);
+    lines.push("| Position | Column | Type | Nullable | Default |");
+    lines.push("|---:|---|---|---|---|");
+
+    tableRows.forEach((row) => {
+      lines.push([
+        `| ${escapeDatabaseSchemaMarkdownCell(row.ordinal_position)}`,
+        escapeDatabaseSchemaMarkdownCell(row.column_name),
+        escapeDatabaseSchemaMarkdownCell(row.data_type),
+        escapeDatabaseSchemaMarkdownCell(String(row.is_nullable || "").toUpperCase() === "YES" ? "YES" : "NO"),
+        `${escapeDatabaseSchemaMarkdownCell(row.column_default)} |`,
+      ].join(" | "));
+    });
+  });
+
+  return lines.join("\n");
+}
+
+async function copyDatabaseSchemaToClipboard() {
+  if (!adminDbSchemaState.rows.length) {
+    showAdminAlertModal("Attenzione", "Schema database non ancora caricato.");
+    return;
+  }
+
+  if (!navigator.clipboard?.writeText) {
+    showAdminAlertModal("Attenzione", "Copia negli appunti non disponibile in questo browser.");
+    return;
+  }
+
+  const defaultLabel = "Copia schema";
+
+  try {
+    await navigator.clipboard.writeText(buildDatabaseSchemaMarkdown());
+
+    if (adminDbSchemaCopyButton) {
+      adminDbSchemaCopyButton.textContent = "Copiato!";
+      adminDbSchemaCopyButton.disabled = true;
+      window.setTimeout(() => {
+        adminDbSchemaCopyButton.textContent = defaultLabel;
+        adminDbSchemaCopyButton.disabled = false;
+      }, 1600);
+    }
+  } catch (error) {
+    showAdminAlertModal("Attenzione", `Errore copia schema: ${error.message || error}`);
+  }
+}
+
+function populateDatabaseSchemaFilters() {
+  if (!adminDbSchemaTableFilter) return;
+
+  const currentValue = adminDbSchemaTableFilter.value;
+  const tableNames = getDatabaseSchemaTables(adminDbSchemaState.rows);
+
+  adminDbSchemaTableFilter.textContent = "";
+
+  const allOption = document.createElement("option");
+  allOption.value = "";
+  allOption.textContent = "Tutte le tabelle";
+  adminDbSchemaTableFilter.appendChild(allOption);
+
+  tableNames.forEach((tableName) => {
+    const option = document.createElement("option");
+    option.value = tableName;
+    option.textContent = tableName;
+    adminDbSchemaTableFilter.appendChild(option);
+  });
+
+  adminDbSchemaTableFilter.value = tableNames.includes(currentValue) ? currentValue : "";
+  adminDbSchemaState.selectedTable = adminDbSchemaTableFilter.value;
+}
+
+function applyDatabaseSchemaFilters() {
+  const selectedTable = adminDbSchemaTableFilter?.value || "";
+  const searchTerm = (adminDbSchemaSearchInput?.value || "").trim().toLowerCase();
+
+  adminDbSchemaState.selectedTable = selectedTable;
+  adminDbSchemaState.searchTerm = searchTerm;
+  adminDbSchemaState.filteredRows = sortDatabaseSchemaRows(adminDbSchemaState.rows).filter((row) => {
+    if (selectedTable && String(row?.table_name || "") !== selectedTable) {
+      return false;
+    }
+
+    if (!searchTerm) return true;
+
+    return [
+      row?.column_name,
+      row?.table_name,
+      row?.data_type,
+    ].some((value) => String(value || "").toLowerCase().includes(searchTerm));
+  });
+
+  renderDatabaseSchemaTable();
+}
+
+function renderDatabaseSchemaTable() {
+  if (!adminDbSchemaTableBody) return;
+
+  const rows = adminDbSchemaState.filteredRows || [];
+  adminDbSchemaTableBody.textContent = "";
+
+  if (!rows.length) {
+    const row = document.createElement("tr");
+    const cell = document.createElement("td");
+
+    cell.colSpan = 6;
+    cell.textContent = adminDbSchemaState.rows.length ? "Nessuna colonna trovata con i filtri attivi." : "Nessuna colonna trovata.";
+    row.appendChild(cell);
+    adminDbSchemaTableBody.appendChild(row);
+    return;
+  }
+
+  rows.forEach((schemaColumn) => {
+    const row = document.createElement("tr");
+    const typeBadge = createDatabaseSchemaBadge(schemaColumn.data_type, "admin-db-schema-type-badge");
+    const nullableBadge = createDatabaseSchemaBadge(
+      formatDatabaseSchemaNullable(schemaColumn.is_nullable),
+      `admin-db-schema-nullable is-${String(schemaColumn.is_nullable || "").toLowerCase() === "yes" ? "yes" : "no"}`,
+    );
+
+    appendAdminTableCell(row, schemaColumn.table_name);
+    appendAdminTableCell(row, schemaColumn.ordinal_position, "num");
+    appendAdminTableCell(row, schemaColumn.column_name);
+    appendAdminTableElementCell(row, typeBadge);
+    appendAdminTableElementCell(row, nullableBadge);
+    appendAdminTableCell(row, schemaColumn.column_default, "admin-db-schema-default");
+
+    adminDbSchemaTableBody.appendChild(row);
+  });
+}
+
+async function loadDatabaseSchema() {
+  if (!supabaseClient) {
+    setAdminState(adminDbSchemaStateElement, "Credenziali Supabase mancanti.", "error");
+    return;
+  }
+
+  setAdminState(adminDbSchemaStateElement, "Caricamento schema...");
+
+  try {
+    const { data, error } = await supabaseClient
+      .from("app_schema_columns")
+      .select("table_name,ordinal_position,column_name,data_type,is_nullable,column_default")
+      .order("table_name", { ascending: true })
+      .order("ordinal_position", { ascending: true });
+
+    if (error) {
+      setAdminState(adminDbSchemaStateElement, `Errore lettura schema: ${error.message}`, "error");
+      return;
+    }
+
+    adminDbSchemaState.rows = sortDatabaseSchemaRows(data);
+    setAdminState(adminDbSchemaStateElement, "");
+    populateDatabaseSchemaFilters();
+    applyDatabaseSchemaFilters();
+  } catch (error) {
+    setAdminState(adminDbSchemaStateElement, `Errore lettura schema: ${error.message || error}`, "error");
+  }
 }
 
 function collectAdminDossierFormData() {
@@ -8519,6 +8744,17 @@ function initAdminInvestmentsBasisEventsPage() {
 
   resetAdminInvestmentsBasisEventForm();
   loadAdminInvestmentsBasisEvents();
+}
+
+function initAdminDbSchemaPage() {
+  if (!adminDbSchemaTableBody) return;
+
+  initAdminAlertModal();
+  adminDbSchemaTableFilter?.addEventListener("change", applyDatabaseSchemaFilters);
+  adminDbSchemaSearchInput?.addEventListener("input", applyDatabaseSchemaFilters);
+  adminDbSchemaCopyButton?.addEventListener("click", copyDatabaseSchemaToClipboard);
+
+  loadDatabaseSchema();
 }
 
 

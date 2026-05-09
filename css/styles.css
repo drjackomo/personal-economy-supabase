@@ -2133,8 +2133,38 @@ button:disabled {
   align-items: start;
 }
 
+.admin-db-schema-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .admin-db-layout .dashboard-chart-section {
   margin-top: 0;
+}
+
+.admin-db-schema-layout .dashboard-chart-section {
+  margin-top: 0;
+}
+
+.admin-db-schema-card {
+  min-width: 0;
+}
+
+.admin-db-schema-toolbar {
+  display: grid;
+  grid-template-columns: minmax(220px, 280px) minmax(260px, 1fr) auto;
+  gap: 14px;
+  align-items: end;
+  margin: 4px 0 16px;
+}
+
+.admin-db-schema-filter {
+  min-width: 0;
+}
+
+.admin-db-schema-copy {
+  min-height: 44px;
+  white-space: nowrap;
 }
 
 .admin-db-table-wrap {
@@ -2142,12 +2172,64 @@ button:disabled {
   overflow: auto;
 }
 
+.admin-db-schema-table-wrap {
+  max-height: 68vh;
+}
+
+.admin-db-schema-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
 .admin-db-table tbody tr {
   cursor: pointer;
 }
 
+.admin-db-schema-table tbody tr {
+  cursor: default;
+}
+
 .admin-db-table tbody tr.is-selected {
   background: #dbeafe;
+}
+
+.admin-db-schema-type-badge,
+.admin-db-schema-nullable {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  min-height: 24px;
+  padding: 3px 10px;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.admin-db-schema-type-badge {
+  border: 1px solid #bfdbfe;
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.admin-db-schema-nullable.is-yes {
+  border: 1px solid #bbf7d0;
+  background: #f0fdf4;
+  color: #15803d;
+}
+
+.admin-db-schema-nullable.is-no {
+  border: 1px solid #cbd5e1;
+  background: #f8fafc;
+  color: #334155;
+}
+
+.admin-db-schema-default {
+  max-width: 380px;
+  color: #475569;
+  white-space: normal;
+  word-break: break-word;
 }
 
 .admin-db-form {
@@ -2673,6 +2755,10 @@ td.in-totals-column {
   }
 
   .admin-db-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-db-schema-toolbar {
     grid-template-columns: 1fr;
   }
 
