@@ -4484,6 +4484,40 @@ function getTitoliSnapshotValue(snapshot) {
   return getFirstDefined(snapshot, ["market_value", "value", "total_value", "total", "valore", "amount"], null);
 }
 
+async function fetchAllTitoliPortfolioSnapshots() {
+  const pageSize = 500;
+  const snapshots = [];
+  let from = 0;
+
+  while (true) {
+    const to = from + pageSize - 1;
+    const { data, error } = await supabaseClient
+      .from("portfolio_snapshots")
+      .select("*")
+      .order("snapshot_date", { ascending: true })
+      .order("dossier_id", { ascending: true })
+      .order("isin", { ascending: true })
+      .range(from, to);
+
+    if (error) throw error;
+
+    const batch = data ?? [];
+    snapshots.push(...batch);
+    console.debug("[Titoli] portfolio_snapshots batch letto:", {
+      from,
+      to,
+      batchRecords: batch.length,
+      totalRecords: snapshots.length,
+    });
+
+    if (batch.length < pageSize) break;
+    from += pageSize;
+  }
+
+  console.debug("[Titoli] portfolio_snapshots record letti dal DB:", snapshots.length);
+  return snapshots;
+}
+
 function isTitoliAssetActive(asset) {
   const visible = getFirstDefined(asset, ["visible"], false);
   const isClosed = getFirstDefined(asset, ["is_closed"], false);
@@ -5498,7 +5532,7 @@ async function loadTitoliInsertReadOnly() {
     const [dossiersResult, assetsResult, snapshotsResult] = await Promise.all([
       supabaseClient.from("dossiers").select("*"),
       supabaseClient.from("portfolio_assets").select("*"),
-      supabaseClient.from("portfolio_snapshots").select("*"),
+      fetchAllTitoliPortfolioSnapshots().then((data) => ({ data, error: null })),
     ]);
 
     if (dossiersResult.error) {
@@ -5822,6 +5856,42 @@ function normalizeTitoliData({ dossiers, assets, snapshots, basisEvents, basisAv
       basis: ["effective_date/date/data", "dossier_id/account_id", "isin", "cost_basis/amount/value/importo"],
     },
   };
+}
+
+function debugTitoliTargetSnapshotLoad(snapshots, normalized) {
+  const targetDate = "2026-05-12";
+  const targetMonth = "2026-05";
+  const targetDossierId = "JACK_ADV_8145340";
+  const targetIsin = "LU1863263346";
+  const targetKey = getTitoliSeriesKey(targetDossierId, targetIsin);
+  const targetRawRows = (snapshots || []).filter((snapshot) => (
+    normalizeDashboardISODate(getTitoliSnapshotDate(snapshot)) === targetDate &&
+    normalizeTitoliId(getTitoliSnapshotDossierId(snapshot)) === targetDossierId &&
+    normalizeTitoliId(getTitoliSnapshotIsin(snapshot)) === targetIsin
+  ));
+  const targetMonthRawRows = (snapshots || []).filter((snapshot) => (
+    normalizeDashboardISODate(getTitoliSnapshotDate(snapshot)).slice(0, 7) === targetMonth &&
+    normalizeTitoliId(getTitoliSnapshotDossierId(snapshot)) === targetDossierId &&
+    normalizeTitoliId(getTitoliSnapshotIsin(snapshot)) === targetIsin
+  ));
+  const targetSeries = (normalized?.allSeries || []).find((series) => series.key === targetKey);
+  const targetMonthRows = (targetSeries?.rows || []).filter((row) => row.dateIso.slice(0, 7) === targetMonth);
+
+  console.debug("[Titoli] debug filtro dossier/titolo/mese:", {
+    dossierId: targetDossierId,
+    isin: targetIsin,
+    month: targetMonth,
+    dbRowsForMonthBeforeNormalize: targetMonthRawRows.length,
+    rowsAfterDossierTitleMonthFilter: targetMonthRows.length,
+  });
+  console.debug("[Titoli] debug riga target portfolio_snapshots:", {
+    snapshotDate: targetDate,
+    dossierId: targetDossierId,
+    isin: targetIsin,
+    loadedFromDb: targetRawRows.length > 0,
+    rawRows: targetRawRows,
+    normalizedRow: (targetSeries?.rows || []).find((row) => row.dateIso === targetDate) || null,
+  });
 }
 
 function getTitoliLatestYearMonth(series) {
@@ -6317,7 +6387,7 @@ async function loadTitoliData() {
     const [dossiersResult, assetsResult, snapshotsResult] = await Promise.all([
       supabaseClient.from("dossiers").select("*"),
       supabaseClient.from("portfolio_assets").select("*"),
-      supabaseClient.from("portfolio_snapshots").select("*"),
+      fetchAllTitoliPortfolioSnapshots().then((data) => ({ data, error: null })),
     ]);
 
     if (dossiersResult.error) throw dossiersResult.error;
@@ -6344,6 +6414,7 @@ async function loadTitoliData() {
       ...titoliState.raw,
       basisAvailable,
     });
+    debugTitoliTargetSnapshotLoad(titoliState.raw.snapshots, titoliState.normalized);
 
     console.log("[Titoli] colonne usate:", titoliState.normalized.columns);
     console.log("[Titoli] dati letti:", {
