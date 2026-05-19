@@ -233,6 +233,7 @@ let titoliState = {
     assets: [],
     snapshots: [],
     basisEvents: [],
+    profiles: [],
   },
   normalized: {
     dossiers: [],
@@ -241,6 +242,7 @@ let titoliState = {
     minDate: "",
     maxDate: "",
     basisAvailable: false,
+    profileMap: new Map(),
     columns: {},
   },
   chartMeta: {
@@ -327,6 +329,88 @@ const supabaseClient = hasCredentials && window.supabase
   ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
   : null;
 let authenticatedAppInitialized = false;
+const ASSET_PROFILES_DEBUG_PREFIX = "[ASSET_PROFILES_DEBUG]";
+
+function normalizeAssetProfileIsin(value) {
+  return String(value || "").trim().toUpperCase();
+}
+
+async function loadPortfolioAssetProfiles() {
+  if (!supabaseClient) {
+    console.error(`${ASSET_PROFILES_DEBUG_PREFIX} Supabase client non disponibile per portfolio_asset_profiles.`);
+    return [];
+  }
+
+  try {
+    const { data, error } = await supabaseClient
+      .from("portfolio_asset_profiles")
+      .select("*");
+
+    if (error) {
+      console.error(`${ASSET_PROFILES_DEBUG_PREFIX} Errore lettura portfolio_asset_profiles:`, error);
+      return [];
+    }
+
+    return data ?? [];
+  } catch (error) {
+    console.error(`${ASSET_PROFILES_DEBUG_PREFIX} Errore imprevisto portfolio_asset_profiles:`, error);
+    return [];
+  }
+}
+
+function buildAssetProfileMap(profiles) {
+  const profileMap = new Map();
+
+  (profiles || []).forEach((profile) => {
+    const isin = normalizeAssetProfileIsin(profile?.isin);
+    if (!isin) return;
+    profileMap.set(isin, profile);
+  });
+
+  return profileMap;
+}
+
+function logAssetProfilesDebug(context, assets, profiles) {
+  const profileMap = buildAssetProfileMap(profiles);
+  const assetsTotal = assets?.length || 0;
+  let assetsActiveEvaluated = 0;
+  let assetsSkippedClosedOrHidden = 0;
+  let assetsWithProfile = 0;
+  let assetsWithoutProfile = 0;
+  const isinsWithoutProfile = new Set();
+
+  (assets || []).forEach((asset) => {
+    const isClosed = asset?.is_closed === true;
+    const isHidden = Object.prototype.hasOwnProperty.call(asset || {}, "visible") && asset?.visible === false;
+    if (isClosed || isHidden) {
+      assetsSkippedClosedOrHidden += 1;
+      return;
+    }
+
+    const isin = normalizeAssetProfileIsin(asset?.isin);
+    if (!isin) return;
+    assetsActiveEvaluated += 1;
+
+    if (profileMap.has(isin)) {
+      assetsWithProfile += 1;
+      return;
+    }
+
+    assetsWithoutProfile += 1;
+    isinsWithoutProfile.add(isin);
+  });
+
+  console.log(`${ASSET_PROFILES_DEBUG_PREFIX} ${context}`, {
+    profilesLoaded: profiles?.length || 0,
+    assetsTotal,
+    assetsActiveEvaluated,
+    assetsSkippedClosedOrHidden,
+    assetsWithProfile,
+    assetsWithoutProfile,
+    isinsWithoutProfile: Array.from(isinsWithoutProfile).sort(),
+    sampleProfile: profiles?.[0] || null,
+  });
+}
 
 async function loadNavbar() {
   if (!navbarRoot) return;
@@ -5736,7 +5820,7 @@ function computeTitoliBasisAtDate(basisMap, seriesKey, snapshotDate) {
   return basis;
 }
 
-function normalizeTitoliData({ dossiers, assets, snapshots, basisEvents, basisAvailable }) {
+function normalizeTitoliData({ dossiers, assets, snapshots, basisEvents, basisAvailable, profileMap }) {
   const activeDossiers = (dossiers || [])
     .filter(isTitoliDossierActive)
     .sort(sortTitoliDossiers)
@@ -5778,6 +5862,7 @@ function normalizeTitoliData({ dossiers, assets, snapshots, basisEvents, basisAv
 
     const key = getTitoliSeriesKey(dossierId, isin);
     const assetMeta = assetMetaByKey.get(key);
+    const profile = profileMap?.get(isin) || null;
     const snapshotName = String(getFirstDefined(snapshot, ["asset_name", "name", "titolo"], "") || "").trim();
     const name = snapshotName || assetMeta?.name || isin;
 
@@ -5789,6 +5874,7 @@ function normalizeTitoliData({ dossiers, assets, snapshots, basisEvents, basisAv
         isin,
         name,
         rows: [],
+        profile,
         visible: assetMeta ? assetMeta.visible : true,
         isClosed: assetMeta?.isClosed === true,
       });
@@ -5825,6 +5911,7 @@ function normalizeTitoliData({ dossiers, assets, snapshots, basisEvents, basisAv
           pct: pctBasis,
           deltaPrev,
           basisChanged,
+          profile: series.profile || null,
         };
       });
 
@@ -5849,11 +5936,13 @@ function normalizeTitoliData({ dossiers, assets, snapshots, basisEvents, basisAv
     minDate,
     maxDate,
     basisAvailable,
+    profileMap: profileMap || new Map(),
     columns: {
       snapshots: ["snapshot_date/date/data", "dossier_id/account_id", "isin", "asset_name", "market_value/value/total_value"],
       assets: ["dossier_id/account_id", "isin", "asset_name/name", "visible", "is_closed"],
       dossiers: ["account_id/dossier_id/id", "label/name", "order/ordine/sort_order"],
       basis: ["effective_date/date/data", "dossier_id/account_id", "isin", "cost_basis/amount/value/importo"],
+      profiles: ["isin", "asset_class", "real_type", "finance_category"],
     },
   };
 }
@@ -6145,6 +6234,33 @@ function refreshTitoliChart() {
   titoliChartCanvas.classList.add("chart-fade");
 }
 
+function createTitoliProfileBadge(value, extraClass = "") {
+  const badge = document.createElement("span");
+  const label = String(value || "").trim();
+  badge.className = `titoli-profile-badge titoli-profile-badge-neutral${extraClass ? ` ${extraClass}` : ""}`;
+  badge.textContent = label || "—";
+  return badge;
+}
+
+function getTitoliProfileType(profile) {
+  return String(profile?.asset_class || profile?.real_type || profile?.finance_category || "").trim();
+}
+
+function getTitoliProfileTypeBadgeClass(value) {
+  const type = String(value || "").trim().toLowerCase();
+  if (!type) return "titoli-profile-badge-type-other";
+  if (type.includes("etf")) return "titoli-profile-badge-type-etf";
+  if (type.includes("fondo") || type.includes("fund")) return "titoli-profile-badge-type-fund";
+  if (type.includes("obblig") || type.includes("bond")) return "titoli-profile-badge-type-bond";
+  if (type.includes("azion") || type.includes("equity") || type.includes("stock")) return "titoli-profile-badge-type-equity";
+  return "titoli-profile-badge-type-other";
+}
+
+function createTitoliProfileTypeBadge(profile) {
+  const type = getTitoliProfileType(profile);
+  return createTitoliProfileBadge(type, getTitoliProfileTypeBadgeClass(type));
+}
+
 function renderTitoliHistoryTable(tbody, rows) {
   if (!tbody) return;
   tbody.textContent = "";
@@ -6152,7 +6268,7 @@ function renderTitoliHistoryTable(tbody, rows) {
   if (!rows.length) {
     const row = document.createElement("tr");
     const cell = document.createElement("td");
-    cell.colSpan = 6;
+    cell.colSpan = 7;
     cell.className = "titoli-history-empty";
     cell.textContent = "Nessun dato disponibile.";
     row.appendChild(cell);
@@ -6167,7 +6283,7 @@ function renderTitoliHistoryTable(tbody, rows) {
       const dividerRow = document.createElement("tr");
       const dividerCell = document.createElement("td");
       dividerRow.className = "dossier-month-divider-row";
-      dividerCell.colSpan = 6;
+      dividerCell.colSpan = 7;
       dividerCell.textContent = getTitoliMonthName(item.dateIso);
       dividerRow.appendChild(dividerCell);
       tbody.appendChild(dividerRow);
@@ -6176,8 +6292,10 @@ function renderTitoliHistoryTable(tbody, rows) {
 
     const row = document.createElement("tr");
     row.classList.toggle("dossier-basis-change-row", item.basisChanged);
+    const profile = item.profile || {};
     const cells = [
       { value: formatTitoliDisplayDate(item.dateIso) },
+      { element: createTitoliProfileTypeBadge(profile) },
       { value: formatTitoliEuroDisplay(item.costBasis), numeric: true },
       { value: formatTitoliEuroDisplay(item.value), numeric: true },
       { value: formatTitoliEuroDisplay(item.deltaBasis, true), numeric: true, className: getTitoliValueClass(item.deltaBasis) },
@@ -6189,7 +6307,11 @@ function renderTitoliHistoryTable(tbody, rows) {
       const cell = document.createElement("td");
       if (cellInfo.numeric) cell.classList.add("num");
       if (cellInfo.className) cell.classList.add(cellInfo.className);
-      cell.textContent = cellInfo.value;
+      if (cellInfo.element) {
+        cell.appendChild(cellInfo.element);
+      } else {
+        cell.textContent = cellInfo.value;
+      }
       row.appendChild(cell);
     });
 
@@ -6236,6 +6358,7 @@ function renderTitoliHistoryCard(card, dossier, seriesList) {
         <thead>
           <tr>
             <th>Data</th>
+            <th>Tipo</th>
             <th class="num">Carico</th>
             <th class="num">Totale</th>
             <th class="num">Δ vs Carico</th>
@@ -6384,10 +6507,11 @@ async function loadTitoliData() {
   setTitoliChartState("Caricamento titoli...");
 
   try {
-    const [dossiersResult, assetsResult, snapshotsResult] = await Promise.all([
+    const [dossiersResult, assetsResult, snapshotsResult, profiles] = await Promise.all([
       supabaseClient.from("dossiers").select("*"),
       supabaseClient.from("portfolio_assets").select("*"),
       fetchAllTitoliPortfolioSnapshots().then((data) => ({ data, error: null })),
+      loadPortfolioAssetProfiles(),
     ]);
 
     if (dossiersResult.error) throw dossiersResult.error;
@@ -6409,10 +6533,13 @@ async function loadTitoliData() {
       assets: assetsResult.data ?? [],
       snapshots: snapshotsResult.data ?? [],
       basisEvents,
+      profiles,
     };
+    const profileMap = buildAssetProfileMap(profiles);
     titoliState.normalized = normalizeTitoliData({
       ...titoliState.raw,
       basisAvailable,
+      profileMap,
     });
     debugTitoliTargetSnapshotLoad(titoliState.raw.snapshots, titoliState.normalized);
 
@@ -6424,6 +6551,7 @@ async function loadTitoliData() {
       basisEvents: titoliState.raw.basisEvents.length,
       basisAvailable,
     });
+    logAssetProfilesDebug("titoli.html", titoliState.raw.assets, profiles);
 
     renderTitoliData();
   } catch (error) {
@@ -7968,7 +8096,7 @@ async function fetchDossierBaseData() {
   }
 
   try {
-    const [dossiersResult, snapshotsResult, basisEventsResult] = await Promise.all([
+    const [dossiersResult, snapshotsResult, basisEventsResult, assetsResult, profiles] = await Promise.all([
       supabaseClient
         .from("dossiers")
         .select("account_id,label,is_closed,order,visible"),
@@ -7978,6 +8106,10 @@ async function fetchDossierBaseData() {
       supabaseClient
         .from("investments_basis_events")
         .select("effective_date,account_id,cost_basis"),
+      supabaseClient
+        .from("portfolio_assets")
+        .select("isin"),
+      loadPortfolioAssetProfiles(),
     ]);
 
     if (dossiersResult.error) {
@@ -7990,6 +8122,10 @@ async function fetchDossierBaseData() {
 
     if (basisEventsResult.error) {
       console.error("[Dossier] Errore lettura investments_basis_events:", basisEventsResult.error);
+    }
+
+    if (assetsResult.error) {
+      console.error("[Dossier] Errore lettura portfolio_assets:", assetsResult.error);
     }
 
     if (dossiersResult.error || snapshotsResult.error || basisEventsResult.error) {
@@ -8005,6 +8141,7 @@ async function fetchDossierBaseData() {
     console.log("[Dossier] dossiers:", dossiersResult.data ?? []);
     console.log("[Dossier] snapshots:", snapshotsResult.data ?? []);
     console.log("[Dossier] basis events:", basisEventsResult.data ?? []);
+    logAssetProfilesDebug("dossier.html", assetsResult.error ? [] : assetsResult.data ?? [], profiles);
     populateDossierControls();
     initializeDossierChartData();
     renderDossierDetailTable();
