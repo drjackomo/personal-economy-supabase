@@ -1746,6 +1746,45 @@ function formatDashboardChartPeriodTooltip(value) {
   return `${months[date.getMonth()]} ${date.getFullYear()}`;
 }
 
+function isDashboardDailyPatrimonyPoint(point) {
+  const period = String(point?.period || "").trim();
+  return /^\d{4}-\d{2}-\d{2}$/.test(period) && period >= "2026-01-01";
+}
+
+function formatDashboardCompactItalianDate(value) {
+  const dateIso = normalizeDashboardISODate(value);
+  const match = dateIso.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return String(value || "").trim();
+
+  const months = ["gen", "feb", "mar", "apr", "mag", "giu", "lug", "ago", "set", "ott", "nov", "dic"];
+  const day = Number(match[3]);
+  const monthIndex = Number(match[2]) - 1;
+
+  if (!Number.isFinite(day) || monthIndex < 0 || monthIndex > 11) {
+    return String(value || "").trim();
+  }
+
+  return `${day} ${months[monthIndex]} ${match[1]}`;
+}
+
+function formatDashboardPatrimonyTooltip(point, fallbackLabel) {
+  if (isDashboardDailyPatrimonyPoint(point)) {
+    return formatDashboardCompactItalianDate(point.period);
+  }
+
+  return formatDashboardChartPeriodTooltip(point?.period || fallbackLabel);
+}
+
+function formatDashboardPatrimonyRangePoint(point, compact = false) {
+  if (isDashboardDailyPatrimonyPoint(point)) {
+    return formatDashboardCompactItalianDate(point.period);
+  }
+
+  return compact
+    ? formatDashboardChartMonth(point?.period)
+    : formatDashboardChartMonthYear(point?.period);
+}
+
 function parseDashboardPeriod(value) {
   const text = String(value || "").trim();
   const match = text.match(/^(\d{4})-(\d{2})$/);
@@ -1803,7 +1842,10 @@ function computeDashboardNiceRange(values, padRatio, tickCount) {
 }
 
 function getPatrimonyBounds(points) {
-  const periods = (points || []).map((point) => String(point.period || "")).filter(Boolean).sort();
+  const periods = (points || [])
+    .map((point) => String(point.filterPeriod || point.period || "").slice(0, 7))
+    .filter(Boolean)
+    .sort();
   if (!periods.length) return null;
   return {
     min: periods[0],
@@ -1937,7 +1979,8 @@ function getFilteredPatrimonyPoints() {
   const { start, end } = patrimonyState.range;
   return wealthTrendSeries.filter((point) => {
     const period = String(point.period || "");
-    return period && (!start || period >= start) && (!end || period <= end);
+    const filterPeriod = String(point.filterPeriod || period.slice(0, 7) || period);
+    return period && (!start || filterPeriod >= start) && (!end || filterPeriod <= end);
   });
 }
 
@@ -1951,7 +1994,7 @@ function buildDashboardYearlyPoints(monthlyPoints) {
     if (!Number.isFinite(year) || !Number.isFinite(month)) return;
 
     const existing = byYear.get(year);
-    if (!existing || (month === 12 && existing.month !== 12) || (existing.month !== 12 && month > existing.month)) {
+    if (!existing || String(point.period || "") > String(existing.period || "")) {
       byYear.set(year, { ...point, year, month });
     }
   });
@@ -2102,7 +2145,7 @@ function buildPatrimonyRangeText(points, mode) {
     return `${start} → ${end} · ${points.length} punti`;
   }
 
-  return `${formatDashboardChartMonth(points[0].period)} → ${formatDashboardChartMonth(points[points.length - 1].period)} · ${points.length} punti`;
+  return `${formatDashboardPatrimonyRangePoint(points[0], true)} → ${formatDashboardPatrimonyRangePoint(points[points.length - 1], true)} · ${points.length} punti`;
 }
 
 function buildPatrimonySubtitle(points, mode) {
@@ -2114,7 +2157,7 @@ function buildPatrimonySubtitle(points, mode) {
     return `${start} → ${end} · Anno`;
   }
 
-  return `${formatDashboardChartMonthYear(points[0].period)} → ${formatDashboardChartMonthYear(points[points.length - 1].period)} · Mese`;
+  return `${formatDashboardPatrimonyRangePoint(points[0])} → ${formatDashboardPatrimonyRangePoint(points[points.length - 1])} · Mese`;
 }
 
 function buildDashboardWealthSeries(rows) {
@@ -2128,6 +2171,7 @@ function buildDashboardWealthSeries(rows) {
 
     series.push({
       period,
+      filterPeriod: period.slice(0, 7),
       year: Number(row.year),
       month: Number(row.month),
       value,
@@ -2138,15 +2182,180 @@ function buildDashboardWealthSeries(rows) {
   }, []);
 }
 
+async function fetchDashboardPagedRows(table, select, configureQuery, pageSize = 1000) {
+  const rows = [];
+  let from = 0;
+
+  while (true) {
+    const to = from + pageSize - 1;
+    let query = supabaseClient.from(table).select(select);
+    query = typeof configureQuery === "function" ? configureQuery(query) : query;
+
+    const { data, error } = await query.range(from, to);
+    if (error) throw error;
+
+    const batch = data ?? [];
+    rows.push(...batch);
+
+    if (batch.length < pageSize) break;
+    from += pageSize;
+  }
+
+  return rows;
+}
+
+function normalizeDashboardWealthDate(value) {
+  const dateIso = normalizeDashboardISODate(value);
+  return /^\d{4}-\d{2}-\d{2}$/.test(dateIso) ? dateIso : "";
+}
+
+function sumDashboardPortfolioSnapshotsByDate(rows) {
+  return (rows || []).reduce((totals, row) => {
+    const dateIso = normalizeDashboardWealthDate(row.snapshot_date);
+    const value = Number(row.market_value);
+    if (!dateIso || !Number.isFinite(value)) return totals;
+
+    totals.set(dateIso, (totals.get(dateIso) || 0) + value);
+    return totals;
+  }, new Map());
+}
+
+function buildDashboardHybridWealthSeries(historyRows, transactionRows, portfolioRows, revolutRows) {
+  const historySeries = buildDashboardWealthSeries(historyRows);
+  const portfolioTotalsByDate = sumDashboardPortfolioSnapshotsByDate(portfolioRows);
+  const transactionDates = new Set();
+  const portfolioDates = new Set(portfolioTotalsByDate.keys());
+  const revolutDates = new Set();
+  const transactionsByDate = new Map();
+  const revolutPersonalByDate = new Map();
+
+  (transactionRows || []).forEach((row) => {
+    const dateIso = normalizeDashboardWealthDate(row.date);
+    const balance = Number(row.balance);
+    if (!dateIso || !Number.isFinite(balance)) return;
+
+    transactionDates.add(dateIso);
+    transactionsByDate.set(dateIso, {
+      date: dateIso,
+      created_at: row.created_at || "",
+      balance,
+    });
+  });
+
+  (revolutRows || []).forEach((row) => {
+    const dateIso = normalizeDashboardWealthDate(row.date);
+    const revolutPersonal = Number(row.revolut_personal);
+    if (!dateIso || !Number.isFinite(revolutPersonal)) return;
+
+    revolutDates.add(dateIso);
+    revolutPersonalByDate.set(dateIso, revolutPersonal);
+  });
+
+  const timeline = Array.from(new Set([
+    ...transactionDates,
+    ...portfolioDates,
+    ...revolutDates,
+  ])).sort();
+
+  let lastBalance = null;
+  let lastPortfolioTotal = null;
+  let lastRevolutPersonal = 0;
+  const dynamicSeries = [];
+
+  timeline.forEach((dateIso) => {
+    const transaction = transactionsByDate.get(dateIso);
+    if (transaction) lastBalance = transaction.balance;
+
+    if (portfolioTotalsByDate.has(dateIso)) {
+      lastPortfolioTotal = portfolioTotalsByDate.get(dateIso);
+    }
+
+    if (revolutPersonalByDate.has(dateIso)) {
+      lastRevolutPersonal = revolutPersonalByDate.get(dateIso);
+    }
+
+    if (!Number.isFinite(lastBalance) || !Number.isFinite(lastPortfolioTotal)) return;
+
+    const value = Math.round((lastBalance + lastPortfolioTotal + lastRevolutPersonal + Number.EPSILON) * 100) / 100;
+    dynamicSeries.push({
+      period: dateIso,
+      filterPeriod: dateIso.slice(0, 7),
+      year: Number(dateIso.slice(0, 4)),
+      month: Number(dateIso.slice(5, 7)),
+      value,
+      note: "",
+      source: "transactions_portfolio_snapshots_revolut_personal",
+    });
+  });
+
+  const finalSeries = [...historySeries, ...dynamicSeries]
+    .sort((first, second) => String(first.period || "").localeCompare(String(second.period || "")));
+
+  console.log("[dashboard-patrimony] patrimony_history usati fino al 2025", {
+    records: historySeries.length,
+  });
+  console.log("[dashboard-patrimony] transactions con balance dal 2026", {
+    records: transactionRows?.length ?? 0,
+  });
+  console.log("[dashboard-patrimony] portfolio_snapshots dal 2026", {
+    records: portfolioRows?.length ?? 0,
+  });
+  console.log("[dashboard-patrimony] revolut_snapshots dal 2026", {
+    records: revolutRows?.length ?? 0,
+  });
+  console.log("[dashboard-patrimony] ultimo valore revolut_personal disponibile", {
+    value: lastRevolutPersonal,
+  });
+  console.log("[dashboard-patrimony] punti finali generati per il grafico", {
+    records: finalSeries.length,
+    historyPoints: historySeries.length,
+    dynamicPoints: dynamicSeries.length,
+  });
+  console.log("[dashboard-patrimony] primi/ultimi 5 punti finali generati", {
+    first5: finalSeries.slice(0, 5),
+    last5: finalSeries.slice(-5),
+  });
+
+  return finalSeries;
+}
+
 async function fetchDashboardWealthSeries() {
-  const { data, error } = await supabaseClient
-    .from("patrimony_history")
-    .select("period,year,month,patrimony_total,note")
-    .order("period", { ascending: true });
+  const [historyRows, transactionRows, portfolioRows, revolutRows] = await Promise.all([
+    fetchDashboardPagedRows(
+      "patrimony_history",
+      "period,year,month,patrimony_total,note",
+      (query) => query
+        .lte("period", "2025-12")
+        .order("period", { ascending: true }),
+    ),
+    fetchDashboardPagedRows(
+      "transactions",
+      "date,created_at,balance",
+      (query) => query
+        .gte("date", "2026-01-01")
+        .not("balance", "is", null)
+        .order("date", { ascending: true })
+        .order("created_at", { ascending: true }),
+    ),
+    fetchDashboardPagedRows(
+      "portfolio_snapshots",
+      "snapshot_date,market_value",
+      (query) => query
+        .gte("snapshot_date", "2026-01-01")
+        .order("snapshot_date", { ascending: true }),
+    ),
+    fetchDashboardPagedRows(
+      "revolut_snapshots",
+      "date,created_at,revolut_personal",
+      (query) => query
+        .gte("date", "2026-01-01")
+        .not("revolut_personal", "is", null)
+        .order("date", { ascending: true })
+        .order("created_at", { ascending: true }),
+    ),
+  ]);
 
-  if (error) throw error;
-
-  return buildDashboardWealthSeries(data ?? []);
+  return buildDashboardHybridWealthSeries(historyRows, transactionRows, portfolioRows, revolutRows);
 }
 
 function drawDashboardWealthChart(series) {
@@ -2204,7 +2413,7 @@ function drawDashboardWealthChart(series) {
         const year = series[index]?.year || "";
         return year ? `Anno ${year}` : "";
       }
-      return formatDashboardChartPeriodTooltip(label);
+      return formatDashboardPatrimonyTooltip(series[index], label);
     },
     tooltipExtra: (index) => notes[index] ? `Nota: ${notes[index]}` : "",
     fill: true,
