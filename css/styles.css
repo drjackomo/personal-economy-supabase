@@ -1979,6 +1979,37 @@ button:disabled {
   margin-top: 4px;
 }
 
+.tooltip .row.is-subtotal {
+  margin-top: 7px;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  color: #bfdbfe;
+  padding-top: 6px;
+  font-weight: 700;
+}
+
+.tooltip .row.is-subtotal + .row {
+  margin-top: 7px;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  padding-top: 6px;
+}
+
+.tooltip .row.is-revolut {
+  color: #d8d1ff;
+}
+
+.tooltip .row.is-total {
+  margin-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.18);
+  color: #ffffff;
+  padding-top: 7px;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.tooltip .row.is-total span:last-child {
+  font-size: 14px;
+}
+
 .tooltip .k {
   display: flex;
   align-items: center;
@@ -2891,7 +2922,7 @@ td.in-totals-column {
 }
 
 .revolut-summary-box {
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
 }
 
 .revolut-summary-box .modal-balance-value {

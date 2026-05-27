@@ -51,9 +51,11 @@ const cancelRevolutModalButton = document.getElementById("cancel-revolut-modal")
 const saveRevolutPlaceholderButton = document.getElementById("save-revolut-placeholder");
 const revolutPersonalInput = document.getElementById("revolut-personal");
 const revolutSharedInput = document.getElementById("revolut-shared");
+const revolutDepositInput = document.getElementById("revolut-deposit");
 const revolutNoteInput = document.getElementById("revolut-note");
 const lastRevolutPersonalElement = document.getElementById("last-revolut-personal");
 const lastRevolutSharedElement = document.getElementById("last-revolut-shared");
+const lastRevolutDepositElement = document.getElementById("last-revolut-deposit");
 const lastRevolutUpdatedElement = document.getElementById("last-revolut-updated");
 const deleteMovementModal = document.getElementById("delete-movement-modal");
 const cancelDeleteMovementButton = document.getElementById("cancel-delete-movement");
@@ -766,9 +768,11 @@ async function initAuthenticatedApp(user) {
       saveRevolutPlaceholderButton &&
       revolutPersonalInput &&
       revolutSharedInput &&
+      revolutDepositInput &&
       revolutNoteInput &&
       lastRevolutPersonalElement &&
       lastRevolutSharedElement &&
+      lastRevolutDepositElement &&
       lastRevolutUpdatedElement
     ) {
       initRevolutModal();
@@ -914,6 +918,7 @@ function setDashboardLoading() {
     "dashboard-revolut-value",
     "dashboard-revolut-jack",
     "dashboard-revolut-join",
+    "dashboard-revolut-deposit",
   ].forEach((id) => setDashboardText(id, "Carico..."));
 
   [
@@ -935,9 +940,11 @@ function renderDashboardValues({ cc, portfolio, revolut }) {
   const finecoTotal = canCalculateFineco ? ccTotal + portfolioTotal : null;
   const revolutJack = Number(revolut?.revolut_personal);
   const revolutJoin = Number(revolut?.revolut_join);
+  const revolutDeposit = Number(revolut?.revolut_deposit ?? 0);
   const revolutTotal =
     (Number.isFinite(revolutJack) ? revolutJack : 0) +
-    (Number.isFinite(revolutJoin) ? revolutJoin : 0);
+    (Number.isFinite(revolutJoin) ? revolutJoin : 0) +
+    (Number.isFinite(revolutDeposit) ? revolutDeposit : 0);
   const finecoDate = getMostRecentDate(cc?.date, portfolio.date);
 
   setDashboardText("dashboard-cc-date", formatDashboardDate(cc?.date));
@@ -957,6 +964,7 @@ function renderDashboardValues({ cc, portfolio, revolut }) {
   setDashboardText("dashboard-revolut-value", revolut ? formatEuro(revolutTotal) : "—");
   setDashboardText("dashboard-revolut-jack", Number.isFinite(revolutJack) ? formatEuro(revolutJack) : "—");
   setDashboardText("dashboard-revolut-join", Number.isFinite(revolutJoin) ? formatEuro(revolutJoin) : "—");
+  setDashboardText("dashboard-revolut-deposit", revolut ? formatEuro(Number.isFinite(revolutDeposit) ? revolutDeposit : 0) : "—");
 }
 
 async function fetchDashboardCurrentAccount() {
@@ -1017,7 +1025,7 @@ async function fetchDashboardPortfolio() {
 async function fetchDashboardRevolut() {
   const { data, error } = await supabaseClient
     .from("revolut_snapshots")
-    .select("date,created_at,revolut_personal,revolut_join")
+    .select("date,created_at,revolut_personal,revolut_join,revolut_deposit")
     .order("date", { ascending: false })
     .order("created_at", { ascending: false })
     .limit(1);
@@ -1064,6 +1072,7 @@ class DashboardMiniLookerChart {
     yMaxStep,
     xLabelFormat,
     xTooltipFormat,
+    tooltipRows,
     tooltipExtra,
     tooltipMode,
     fill,
@@ -1099,6 +1108,7 @@ class DashboardMiniLookerChart {
     this.yMax = typeof yMax === "number" ? yMax : null;
     this.xLabelFormat = xLabelFormat || ((label) => label);
     this.xTooltipFormat = xTooltipFormat || this.xLabelFormat;
+    this.tooltipRows = typeof tooltipRows === "function" ? tooltipRows : null;
     this.tooltipExtra = tooltipExtra || null;
     this.tooltipMode = tooltipMode || "all";
     this.fill = Boolean(fill);
@@ -1606,6 +1616,8 @@ class DashboardMiniLookerChart {
   }
 
   renderTooltip(event, index, rows, tooltipContext = null) {
+    const customRows = this.tooltipRows ? this.tooltipRows(index, tooltipContext, rows) : null;
+    const displayRows = Array.isArray(customRows) && customRows.length ? customRows : rows;
     const extra = typeof this.tooltipExtra === "function" ? this.tooltipExtra(index, tooltipContext) : "";
     let extraHtml = "";
     if (Array.isArray(extra)) {
@@ -1619,12 +1631,16 @@ class DashboardMiniLookerChart {
 
     this.tooltip.innerHTML =
       `<div class="t">${this.escapeHtml(this.xTooltipFormat(this.labels[index], index))}</div>` +
-      rows.map((row) => `
-        <div class="row">
-          <span class="k"><span class="legend-dot" style="background:${row.color}"></span>${this.escapeHtml(row.name)}</span>
+      displayRows.map((row) => {
+        const rowClass = row.className ? ` ${String(row.className).replace(/[^\w-]/g, "")}` : "";
+        const dot = row.color ? `<span class="legend-dot" style="background:${this.escapeHtml(row.color)}"></span>` : "";
+        return `
+        <div class="row${rowClass}">
+          <span class="k">${dot}${this.escapeHtml(row.name)}</span>
           <span>${this.escapeHtml(row.value)}</span>
         </div>
-      `).join("") +
+      `;
+      }).join("") +
       extraHtml;
 
     this.tooltip.style.display = "block";
@@ -2175,6 +2191,7 @@ function buildDashboardWealthSeries(rows) {
       year: Number(row.year),
       month: Number(row.month),
       value,
+      patrimonyTotal: value,
       note: row.note || "",
     });
 
@@ -2227,7 +2244,7 @@ function buildDashboardHybridWealthSeries(historyRows, transactionRows, portfoli
   const portfolioDates = new Set(portfolioTotalsByDate.keys());
   const revolutDates = new Set();
   const transactionsByDate = new Map();
-  const revolutPersonalByDate = new Map();
+  const revolutTotalsByDate = new Map();
 
   (transactionRows || []).forEach((row) => {
     const dateIso = normalizeDashboardWealthDate(row.date);
@@ -2244,11 +2261,15 @@ function buildDashboardHybridWealthSeries(historyRows, transactionRows, portfoli
 
   (revolutRows || []).forEach((row) => {
     const dateIso = normalizeDashboardWealthDate(row.date);
-    const revolutPersonal = Number(row.revolut_personal);
-    if (!dateIso || !Number.isFinite(revolutPersonal)) return;
+    const revolutPersonal = Number(row.revolut_personal ?? 0);
+    const revolutDeposit = Number(row.revolut_deposit ?? 0);
+    if (!dateIso || !Number.isFinite(revolutPersonal) || !Number.isFinite(revolutDeposit)) return;
 
     revolutDates.add(dateIso);
-    revolutPersonalByDate.set(dateIso, revolutPersonal);
+    revolutTotalsByDate.set(dateIso, {
+      personal: revolutPersonal,
+      deposit: Number.isFinite(revolutDeposit) ? revolutDeposit : 0,
+    });
   });
 
   const timeline = Array.from(new Set([
@@ -2260,6 +2281,7 @@ function buildDashboardHybridWealthSeries(historyRows, transactionRows, portfoli
   let lastBalance = null;
   let lastPortfolioTotal = null;
   let lastRevolutPersonal = 0;
+  let lastRevolutDeposit = 0;
   const dynamicSeries = [];
 
   timeline.forEach((dateIso) => {
@@ -2270,19 +2292,27 @@ function buildDashboardHybridWealthSeries(historyRows, transactionRows, portfoli
       lastPortfolioTotal = portfolioTotalsByDate.get(dateIso);
     }
 
-    if (revolutPersonalByDate.has(dateIso)) {
-      lastRevolutPersonal = revolutPersonalByDate.get(dateIso);
+    if (revolutTotalsByDate.has(dateIso)) {
+      const revolutTotals = revolutTotalsByDate.get(dateIso);
+      lastRevolutPersonal = revolutTotals.personal;
+      lastRevolutDeposit = revolutTotals.deposit;
     }
 
     if (!Number.isFinite(lastBalance) || !Number.isFinite(lastPortfolioTotal)) return;
 
-    const value = Math.round((lastBalance + lastPortfolioTotal + lastRevolutPersonal + Number.EPSILON) * 100) / 100;
+    const revolutTotalForPatrimony = lastRevolutPersonal;
+    const value = Math.round((lastBalance + lastPortfolioTotal + revolutTotalForPatrimony + Number.EPSILON) * 100) / 100;
     dynamicSeries.push({
       period: dateIso,
       filterPeriod: dateIso.slice(0, 7),
       year: Number(dateIso.slice(0, 4)),
       month: Number(dateIso.slice(5, 7)),
       value,
+      checkingValue: lastBalance,
+      contoCorrenteValue: lastBalance,
+      portfolioValue: lastPortfolioTotal,
+      revolutPersonalValue: lastRevolutPersonal,
+      patrimonyTotal: value,
       note: "",
       source: "transactions_portfolio_snapshots_revolut_personal",
     });
@@ -2303,7 +2333,13 @@ function buildDashboardHybridWealthSeries(historyRows, transactionRows, portfoli
   console.log("[dashboard-patrimony] revolut_snapshots dal 2026", {
     records: revolutRows?.length ?? 0,
   });
-  console.log("[dashboard-patrimony] ultimo valore revolut_personal disponibile", {
+  console.log("[dashboard-patrimony] revolut_personal usato nel patrimonio", {
+    value: lastRevolutPersonal,
+  });
+  console.log("[dashboard-patrimony] revolut_deposit letto ma escluso dal patrimonio", {
+    value: lastRevolutDeposit,
+  });
+  console.log("[dashboard-patrimony] valore revolut totale usato nel patrimonio", {
     value: lastRevolutPersonal,
   });
   console.log("[dashboard-patrimony] punti finali generati per il grafico", {
@@ -2317,6 +2353,34 @@ function buildDashboardHybridWealthSeries(historyRows, transactionRows, portfoli
   });
 
   return finalSeries;
+}
+
+function buildDashboardPatrimonyTooltipRows(point) {
+  if (!point || point.source !== "transactions_portfolio_snapshots_revolut_personal") return null;
+
+  const checkingValue = Number(point.checkingValue ?? point.contoCorrenteValue);
+  const portfolioValue = Number(point.portfolioValue);
+  const revolutPersonalValue = Number(point.revolutPersonalValue);
+  const patrimonyTotal = Number(point.patrimonyTotal ?? point.value);
+
+  if (
+    !Number.isFinite(checkingValue) ||
+    !Number.isFinite(portfolioValue) ||
+    !Number.isFinite(revolutPersonalValue) ||
+    !Number.isFinite(patrimonyTotal)
+  ) {
+    return null;
+  }
+
+  const finecoTotal = checkingValue + portfolioValue;
+
+  return [
+    { name: "Conto corrente", value: formatEuro(checkingValue) },
+    { name: "Portafoglio", value: formatEuro(portfolioValue) },
+    { name: "Totale Fineco", value: formatEuro(finecoTotal), className: "is-subtotal" },
+    { name: "Revolut", value: formatEuro(revolutPersonalValue), className: "is-revolut" },
+    { name: "Totale", value: formatEuro(patrimonyTotal), className: "is-total" },
+  ];
 }
 
 async function fetchDashboardWealthSeries() {
@@ -2346,10 +2410,9 @@ async function fetchDashboardWealthSeries() {
     ),
     fetchDashboardPagedRows(
       "revolut_snapshots",
-      "date,created_at,revolut_personal",
+      "date,created_at,revolut_personal,revolut_deposit",
       (query) => query
         .gte("date", "2026-01-01")
-        .not("revolut_personal", "is", null)
         .order("date", { ascending: true })
         .order("created_at", { ascending: true }),
     ),
@@ -2415,6 +2478,7 @@ function drawDashboardWealthChart(series) {
       }
       return formatDashboardPatrimonyTooltip(series[index], label);
     },
+    tooltipRows: (index) => buildDashboardPatrimonyTooltipRows(series[index]),
     tooltipExtra: (index) => notes[index] ? `Nota: ${notes[index]}` : "",
     fill: true,
     pointRadius: 0,
@@ -3699,12 +3763,14 @@ function closeRevolutModal() {
 function resetRevolutSummary() {
   lastRevolutPersonalElement.textContent = "Non disponibile";
   lastRevolutSharedElement.textContent = "Non disponibile";
+  lastRevolutDepositElement.textContent = "Non disponibile";
   lastRevolutUpdatedElement.textContent = "Non disponibile";
 }
 
 function resetRevolutForm() {
   revolutPersonalInput.value = "";
   revolutSharedInput.value = "";
+  revolutDepositInput.value = "";
   revolutNoteInput.value = "";
 }
 
@@ -3723,12 +3789,19 @@ function formatItalianDateTime(value) {
 function renderRevolutSnapshot(snapshot) {
   if (!snapshot) {
     resetRevolutSummary();
+    revolutDepositInput.value = formatAmountInput(0);
     return;
   }
 
-  lastRevolutPersonalElement.textContent = formatEuro(snapshot.revolut_personal);
-  lastRevolutSharedElement.textContent = formatEuro(snapshot.revolut_join);
+  const revolutPersonal = Number(snapshot.revolut_personal);
+  const revolutShared = Number(snapshot.revolut_join);
+  const revolutDeposit = Number(snapshot.revolut_deposit ?? 0);
+
+  lastRevolutPersonalElement.textContent = Number.isFinite(revolutPersonal) ? formatEuro(revolutPersonal) : formatEuro(0);
+  lastRevolutSharedElement.textContent = Number.isFinite(revolutShared) ? formatEuro(revolutShared) : formatEuro(0);
+  lastRevolutDepositElement.textContent = Number.isFinite(revolutDeposit) ? formatEuro(revolutDeposit) : formatEuro(0);
   lastRevolutUpdatedElement.textContent = formatItalianDateTime(snapshot.date ?? snapshot.created_at);
+  revolutDepositInput.value = formatAmountInput(Number.isFinite(revolutDeposit) ? revolutDeposit : 0);
 }
 
 function getRevolutSupabaseClient() {
@@ -3782,8 +3855,9 @@ async function saveRevolutSnapshot() {
 
   const revolutPersonale = parseItalianAmount(revolutPersonalInput.value);
   const revolutCointestato = parseItalianAmount(revolutSharedInput.value);
+  const revolutDeposito = parseItalianAmount(revolutDepositInput.value);
 
-  if (!Number.isFinite(revolutPersonale) || !Number.isFinite(revolutCointestato)) {
+  if (!Number.isFinite(revolutPersonale) || !Number.isFinite(revolutCointestato) || !Number.isFinite(revolutDeposito)) {
     console.error("Inserisci valori Revolut validi.");
     return;
   }
@@ -3792,6 +3866,7 @@ async function saveRevolutSnapshot() {
     date: new Date().toISOString().split("T")[0],
     revolut_personal: revolutPersonale,
     revolut_join: revolutCointestato,
+    revolut_deposit: revolutDeposito,
     note: revolutNoteInput.value.trim() || null,
   };
 
