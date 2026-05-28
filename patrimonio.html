@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="it">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="robots" content="noindex, nofollow, noarchive, nosnippet">
+    <title>Patrimonio - Personal Economy</title>
+    <link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
+    <link rel="stylesheet" href="css/styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="js/app.js" defer></script>
+  </head>
+  <body>
+    <div id="navbar-root"></div>
+
+    <main id="patrimonio-page" class="app dashboard-page patrimonio-page">
+      <div class="dashboard-heading">
+        <h1>Patrimonio</h1>
+        <p class="subtitle">Storico consolidato del patrimonio nel tempo</p>
+      </div>
+
+      <div class="patrimonio-layout" id="patrimonio-layout">
+        <section class="dashboard-chart-section patrimonio-period-card" aria-labelledby="patrimonio-period-title">
+          <h2 id="patrimonio-period-title" class="chart-title">Periodo</h2>
+          <div class="patrimonio-period-controls">
+            <div class="movimenti-month-nav patrimonio-month-nav" aria-label="Navigazione mesi patrimonio">
+              <button id="patrimonio-prev-month" class="movimenti-month-nav-button" type="button" aria-label="Mese precedente">‹</button>
+              <button id="patrimonio-next-month" class="movimenti-month-nav-button" type="button" aria-label="Mese successivo">›</button>
+            </div>
+            <label>
+              <span>Anno</span>
+              <select id="patrimonio-year"></select>
+            </label>
+            <label>
+              <span>Mese</span>
+              <select id="patrimonio-month"></select>
+            </label>
+            <div class="patrimonio-period-summary" id="patrimonio-period-summary">—</div>
+          </div>
+        </section>
+
+        <section class="dashboard-chart-section patrimonio-table-card" aria-labelledby="patrimonio-table-title">
+          <div class="dashboard-chart-header chart-card-title">
+            <div>
+              <h2 id="patrimonio-table-title" class="chart-title">Storico patrimonio</h2>
+              <div id="patrimonio-table-subtitle" class="chart-subtitle">—</div>
+            </div>
+          </div>
+
+          <div id="patrimonio-table-state" class="dashboard-chart-state is-visible" aria-live="polite">Caricamento patrimonio...</div>
+
+          <div class="patrimonio-table-panel">
+            <div class="patrimonio-month-summary" id="patrimonio-month-summary">—</div>
+            <div class="dossier-table-scroll patrimonio-table-wrap" id="patrimonio-table-wrap">
+              <table id="patrimonio-table" class="transactions-table dossier-table patrimonio-table">
+                <thead>
+                  <tr>
+                    <th class="patrimonio-expand-column" aria-label="Dettaglio"></th>
+                    <th>Data</th>
+                    <th class="num">Conto corrente</th>
+                    <th class="num">Portafoglio</th>
+                    <th class="num">Fineco</th>
+                    <th class="num">Revolut</th>
+                    <th class="num">Totale</th>
+                    <th class="num">Δ vs prec</th>
+                    <th class="num">% vs prec</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+      </div>
+    </main>
+  </body>
+</html>

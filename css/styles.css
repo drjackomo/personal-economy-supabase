@@ -1250,6 +1250,185 @@ button:disabled {
   color: #991b1b;
 }
 
+.patrimonio-expand-column,
+.patrimonio-expand-cell {
+  width: 36px;
+  min-width: 36px;
+  text-align: center;
+}
+
+.patrimonio-expand-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: 1px solid #d8dee8;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #334155;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1;
+  padding: 0;
+}
+
+.patrimonio-expand-button:hover {
+  background: #f8fafc;
+}
+
+.patrimonio-detail-row td {
+  background: #f8fafc;
+  padding: 10px;
+}
+
+.dossier-table tbody tr.patrimonio-detail-row:hover td {
+  background: #f8fafc;
+}
+
+.patrimonio-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(220px, 1fr));
+  gap: 14px;
+}
+
+.patrimonio-detail-block {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.patrimonio-detail-title {
+  color: #334155;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.patrimonio-detail-item {
+  display: grid;
+  gap: 4px;
+}
+
+.patrimonio-detail-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: #475569;
+  font-size: 12px;
+}
+
+.patrimonio-detail-meta span:last-child {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.patrimonio-detail-bar {
+  overflow: hidden;
+  height: 6px;
+  border-radius: 999px;
+  background: #e2e8f0;
+}
+
+.patrimonio-detail-bar-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: #2563eb;
+}
+
+.patrimonio-layout {
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+  margin-top: 26px;
+}
+
+.patrimonio-layout > .dashboard-chart-section {
+  margin-top: 0;
+}
+
+.patrimonio-period-card {
+  min-width: 0;
+}
+
+.patrimonio-table-card {
+  min-width: 0;
+}
+
+.patrimonio-period-controls {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+
+.patrimonio-period-controls label {
+  display: grid;
+  gap: 6px;
+}
+
+.patrimonio-period-controls label span {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.patrimonio-period-controls select {
+  width: 100%;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 10px;
+  background: #ffffff;
+  color: #0f172a;
+  font-size: 14px;
+  padding: 9px 10px;
+}
+
+.patrimonio-month-nav {
+  justify-content: flex-start;
+}
+
+.patrimonio-period-card .movimenti-month-nav-button {
+  width: 40px;
+  min-width: 40px;
+  height: 40px;
+  border: 1px solid rgba(148, 163, 184, 0.32);
+  border-radius: 10px;
+  background: #ffffff;
+  box-shadow: 0 6px 14px rgba(15, 23, 42, 0.055);
+  color: #475569;
+  font-size: 20px;
+  line-height: 1;
+  padding: 0;
+}
+
+.patrimonio-period-card .movimenti-month-nav-button:hover {
+  border-color: rgba(96, 165, 250, 0.46);
+  background: #f8fafc;
+  color: #1d4ed8;
+}
+
+.patrimonio-period-card .movimenti-month-nav-button:focus-visible {
+  outline: 3px solid rgba(59, 130, 246, 0.22);
+  outline-offset: 2px;
+}
+
+.patrimonio-table-panel {
+  min-width: 0;
+}
+
+.patrimonio-period-summary,
+.patrimonio-month-summary {
+  margin-bottom: 10px;
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.patrimonio-period-summary {
+  margin-bottom: 0;
+  line-height: 1.4;
+}
+
 .dashboard-chart-tooltip {
   position: absolute;
   z-index: 2;
@@ -1913,6 +2092,11 @@ button:disabled {
   min-width: 780px;
 }
 
+.dossier-table.patrimonio-table {
+  width: 100%;
+  min-width: 960px;
+}
+
 .dossier-table th,
 .dossier-table td {
   border-bottom: 1px solid rgba(226, 232, 240, 0.82);
@@ -1930,6 +2114,10 @@ button:disabled {
 .dossier-table .num {
   text-align: right;
   font-variant-numeric: tabular-nums;
+}
+
+.dossier-table.patrimonio-table .value-neutral {
+  color: #64748b;
 }
 
 .dossier-table tbody tr:not(.dossier-month-divider-row):not(.dossier-basis-change-row):hover td {
@@ -3230,6 +3418,14 @@ td.in-totals-column {
 
   .chart-toggle-btn {
     flex: 1;
+  }
+
+  .patrimonio-detail-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .patrimonio-layout {
+    grid-template-columns: 1fr;
   }
 
   .titoli-grand-total {

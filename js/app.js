@@ -85,6 +85,18 @@ const titoliSeriesList = document.getElementById("titoli-series-list");
 const titoliHistoryStateElement = document.getElementById("titoli-history-state");
 const dashboardCardsRoot = document.getElementById("dashboard-cards");
 const dashboardErrorElement = document.getElementById("dashboard-error");
+const patrimonioPageRoot = document.getElementById("patrimonio-page");
+const patrimonioTableStateElement = document.getElementById("patrimonio-table-state");
+const patrimonioTableSubtitle = document.getElementById("patrimonio-table-subtitle");
+const patrimonioLayout = document.getElementById("patrimonio-layout");
+const patrimonioYearSelect = document.getElementById("patrimonio-year");
+const patrimonioMonthSelect = document.getElementById("patrimonio-month");
+const patrimonioPrevMonthButton = document.getElementById("patrimonio-prev-month");
+const patrimonioNextMonthButton = document.getElementById("patrimonio-next-month");
+const patrimonioPeriodSummary = document.getElementById("patrimonio-period-summary");
+const patrimonioMonthSummary = document.getElementById("patrimonio-month-summary");
+const patrimonioTableWrap = document.getElementById("patrimonio-table-wrap");
+const patrimonioTableBody = document.querySelector("#patrimonio-table tbody");
 const wealthTrendCanvas = document.getElementById("wealth-trend-chart");
 const wealthTrendLegend = document.getElementById("wealth-trend-legend");
 const wealthTrendState = document.getElementById("wealth-trend-state");
@@ -268,6 +280,12 @@ let patrimonyState = {
     end: "",
     preset: "all",
   },
+};
+let patrimonioTableState = {
+  rows: [],
+  availableMonths: [],
+  selectedMonth: "",
+  expandedKey: "",
 };
 let investmentsViewState = {
   mode: "month",
@@ -688,6 +706,11 @@ async function initAuthenticatedApp(user) {
   if (wealthTrendCanvas) {
     initPatrimonyControls();
     loadDashboardWealthTrend();
+  }
+
+  if (patrimonioPageRoot) {
+    initPatrimonioPeriodControls();
+    loadPatrimonioPage();
   }
 
   if (investmentsCanvas) {
@@ -2237,9 +2260,41 @@ function sumDashboardPortfolioSnapshotsByDate(rows) {
   }, new Map());
 }
 
-function buildDashboardHybridWealthSeries(historyRows, transactionRows, portfolioRows, revolutRows) {
+function buildDashboardDossierTypeMap(dossierRows) {
+  return (dossierRows || []).reduce((typeMap, dossier) => {
+    const accountId = String(dossier.account_id || dossier.dossier_id || dossier.id || "").trim().toUpperCase();
+    if (!accountId) return typeMap;
+
+    typeMap.set(accountId, String(dossier.type || "").trim().toUpperCase());
+    return typeMap;
+  }, new Map());
+}
+
+function sumDashboardPortfolioSplitsByDate(rows, dossierRows) {
+  const dossierTypes = buildDashboardDossierTypeMap(dossierRows);
+
+  return (rows || []).reduce((totals, row) => {
+    const dateIso = normalizeDashboardWealthDate(row.snapshot_date);
+    const dossierId = String(row.dossier_id || row.account_id || "").trim().toUpperCase();
+    const value = Number(row.market_value);
+    if (!dateIso || !dossierId || !Number.isFinite(value)) return totals;
+
+    const split = totals.get(dateIso) || { jack: 0, figli: 0 };
+    if (dossierTypes.get(dossierId) === "CHILD") {
+      split.figli += value;
+    } else {
+      split.jack += value;
+    }
+
+    totals.set(dateIso, split);
+    return totals;
+  }, new Map());
+}
+
+function buildDashboardHybridWealthSeries(historyRows, transactionRows, portfolioRows, revolutRows, dossierRows = []) {
   const historySeries = buildDashboardWealthSeries(historyRows);
   const portfolioTotalsByDate = sumDashboardPortfolioSnapshotsByDate(portfolioRows);
+  const portfolioSplitsByDate = sumDashboardPortfolioSplitsByDate(portfolioRows, dossierRows);
   const transactionDates = new Set();
   const portfolioDates = new Set(portfolioTotalsByDate.keys());
   const revolutDates = new Set();
@@ -2280,6 +2335,8 @@ function buildDashboardHybridWealthSeries(historyRows, transactionRows, portfoli
 
   let lastBalance = null;
   let lastPortfolioTotal = null;
+  let lastPortfolioJack = null;
+  let lastPortfolioFigli = null;
   let lastRevolutPersonal = 0;
   let lastRevolutDeposit = 0;
   const dynamicSeries = [];
@@ -2290,6 +2347,9 @@ function buildDashboardHybridWealthSeries(historyRows, transactionRows, portfoli
 
     if (portfolioTotalsByDate.has(dateIso)) {
       lastPortfolioTotal = portfolioTotalsByDate.get(dateIso);
+      const split = portfolioSplitsByDate.get(dateIso) || { jack: lastPortfolioTotal, figli: 0 };
+      lastPortfolioJack = split.jack;
+      lastPortfolioFigli = split.figli;
     }
 
     if (revolutTotalsByDate.has(dateIso)) {
@@ -2311,6 +2371,8 @@ function buildDashboardHybridWealthSeries(historyRows, transactionRows, portfoli
       checkingValue: lastBalance,
       contoCorrenteValue: lastBalance,
       portfolioValue: lastPortfolioTotal,
+      portfolioJackValue: Number.isFinite(lastPortfolioJack) ? lastPortfolioJack : lastPortfolioTotal,
+      portfolioFigliValue: Number.isFinite(lastPortfolioFigli) ? lastPortfolioFigli : 0,
       revolutPersonalValue: lastRevolutPersonal,
       patrimonyTotal: value,
       note: "",
@@ -2384,7 +2446,7 @@ function buildDashboardPatrimonyTooltipRows(point) {
 }
 
 async function fetchDashboardWealthSeries() {
-  const [historyRows, transactionRows, portfolioRows, revolutRows] = await Promise.all([
+  const [historyRows, transactionRows, portfolioRows, revolutRows, dossierRows] = await Promise.all([
     fetchDashboardPagedRows(
       "patrimony_history",
       "period,year,month,patrimony_total,note",
@@ -2403,7 +2465,7 @@ async function fetchDashboardWealthSeries() {
     ),
     fetchDashboardPagedRows(
       "portfolio_snapshots",
-      "snapshot_date,market_value",
+      "snapshot_date,dossier_id,market_value",
       (query) => query
         .gte("snapshot_date", "2026-01-01")
         .order("snapshot_date", { ascending: true }),
@@ -2416,9 +2478,449 @@ async function fetchDashboardWealthSeries() {
         .order("date", { ascending: true })
         .order("created_at", { ascending: true }),
     ),
+    fetchDashboardPagedRows(
+      "dossiers",
+      "account_id,type",
+      (query) => query,
+    ),
   ]);
 
-  return buildDashboardHybridWealthSeries(historyRows, transactionRows, portfolioRows, revolutRows);
+  return buildDashboardHybridWealthSeries(historyRows, transactionRows, portfolioRows, revolutRows, dossierRows);
+}
+
+function setPatrimonioTableState(message, type = "") {
+  if (!patrimonioTableStateElement) return;
+
+  patrimonioTableStateElement.textContent = message || "";
+  patrimonioTableStateElement.classList.toggle("is-visible", Boolean(message));
+  patrimonioTableStateElement.classList.toggle("is-error", type === "error");
+}
+
+function formatPatrimonioDate(value) {
+  const dateIso = normalizeDashboardWealthDate(value);
+  return dateIso ? formatDashboardCompactItalianDate(dateIso) : "—";
+}
+
+function appendPatrimonioCell(row, className = "") {
+  const cell = document.createElement("td");
+  if (className) cell.className = className;
+  row.appendChild(cell);
+  return cell;
+}
+
+function renderPatrimonioMoneyCell(cell, total) {
+  cell.textContent = Number.isFinite(total) ? formatEuro(total) : "—";
+}
+
+function formatPatrimonioDelta(value) {
+  if (!Number.isFinite(value)) return "—";
+  if (value === 0) return formatEuro(0);
+
+  return formatDashboardSignedEuro(value);
+}
+
+function renderPatrimonioDeltaCell(cell, total, previousTotal) {
+  if (!Number.isFinite(total) || !Number.isFinite(previousTotal)) {
+    cell.textContent = "—";
+    cell.classList.add("value-neutral");
+    return;
+  }
+
+  const delta = Math.round((total - previousTotal + Number.EPSILON) * 100) / 100;
+  cell.classList.add(getValueClass(delta));
+  cell.textContent = formatPatrimonioDelta(delta);
+}
+
+function renderPatrimonioPercentDeltaCell(cell, total, previousTotal) {
+  if (!Number.isFinite(total) || !Number.isFinite(previousTotal) || previousTotal === 0) {
+    cell.textContent = "—";
+    cell.classList.add("value-neutral");
+    return;
+  }
+
+  const percentDelta = (total - previousTotal) / previousTotal;
+  cell.classList.add(getValueClass(percentDelta));
+  cell.textContent = formatDossierPercent(percentDelta);
+}
+
+function appendPatrimonioMonthDivider(label) {
+  if (!patrimonioTableBody || !label) return;
+
+  const row = document.createElement("tr");
+  const cell = document.createElement("td");
+
+  row.className = "dossier-month-divider-row";
+  cell.colSpan = 9;
+  cell.textContent = label;
+  row.appendChild(cell);
+  patrimonioTableBody.appendChild(row);
+}
+
+function getPatrimonioRowKey(point) {
+  return String(point?.period || "");
+}
+
+function renderPatrimonioExpandCell(row, point) {
+  const cell = appendPatrimonioCell(row, "patrimonio-expand-cell");
+  const button = document.createElement("button");
+  const rowKey = getPatrimonioRowKey(point);
+  const isExpanded = patrimonioTableState.expandedKey === rowKey;
+
+  button.type = "button";
+  button.className = "patrimonio-expand-button";
+  button.textContent = isExpanded ? "−" : "+";
+  button.setAttribute("aria-expanded", String(isExpanded));
+  button.setAttribute("aria-label", `${isExpanded ? "Chiudi" : "Apri"} dettaglio ${formatPatrimonioDate(point.period)}`);
+  button.addEventListener("click", () => {
+    patrimonioTableState.expandedKey = isExpanded ? "" : rowKey;
+    renderPatrimonioCurrentMonth();
+  });
+
+  cell.appendChild(button);
+}
+
+function calcPatrimonioShare(value, total) {
+  const numericValue = Number(value);
+  const numericTotal = Number(total);
+  if (!Number.isFinite(numericValue) || !Number.isFinite(numericTotal) || numericTotal <= 0) return 0;
+
+  return Math.max(0, Math.min(100, (numericValue / numericTotal) * 100));
+}
+
+function formatPatrimonioShare(value) {
+  return `${new Intl.NumberFormat("it-IT", {
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+  }).format(value)}%`;
+}
+
+function createPatrimonioDetailItem(label, value, total) {
+  const item = document.createElement("div");
+  const meta = document.createElement("div");
+  const name = document.createElement("span");
+  const amount = document.createElement("span");
+  const track = document.createElement("div");
+  const fill = document.createElement("div");
+  const pct = calcPatrimonioShare(value, total);
+
+  item.className = "patrimonio-detail-item";
+  meta.className = "patrimonio-detail-meta";
+  name.textContent = label;
+  amount.textContent = `${formatEuro(value)} · ${formatPatrimonioShare(pct)}`;
+  track.className = "patrimonio-detail-bar";
+  fill.className = "patrimonio-detail-bar-fill";
+  fill.style.width = `${pct}%`;
+
+  meta.appendChild(name);
+  meta.appendChild(amount);
+  track.appendChild(fill);
+  item.appendChild(meta);
+  item.appendChild(track);
+  return item;
+}
+
+function createPatrimonioDetailBlock(title, jackValue, figliValue, total) {
+  const block = document.createElement("div");
+  const heading = document.createElement("div");
+
+  block.className = "patrimonio-detail-block";
+  heading.className = "patrimonio-detail-title";
+  heading.textContent = title;
+  block.appendChild(heading);
+  block.appendChild(createPatrimonioDetailItem("Jack", jackValue, total));
+  block.appendChild(createPatrimonioDetailItem("Figli", figliValue, total));
+  return block;
+}
+
+function appendPatrimonioDetailRow({
+  portfolioValue,
+  portfolioJackValue,
+  portfolioFigliValue,
+  finecoTotal,
+  finecoJack,
+  finecoFigli,
+}) {
+  if (!patrimonioTableBody) return;
+
+  const row = document.createElement("tr");
+  const cell = document.createElement("td");
+  const content = document.createElement("div");
+
+  row.className = "patrimonio-detail-row";
+  cell.colSpan = 9;
+  content.className = "patrimonio-detail-grid";
+  content.appendChild(createPatrimonioDetailBlock("Portafoglio", portfolioJackValue, portfolioFigliValue, portfolioValue));
+  content.appendChild(createPatrimonioDetailBlock("Fineco", finecoJack, finecoFigli, finecoTotal));
+  cell.appendChild(content);
+  row.appendChild(cell);
+  patrimonioTableBody.appendChild(row);
+}
+
+function normalizePatrimonioRows(series) {
+  return (series || [])
+    .filter((point) => point?.source === "transactions_portfolio_snapshots_revolut_personal")
+    .slice()
+    .sort((first, second) => String(second.period || "").localeCompare(String(first.period || "")));
+}
+
+function getPatrimonioMonthKey(point) {
+  return String(point?.period || "").slice(0, 7);
+}
+
+function getPatrimonioAvailableMonths(rows) {
+  return Array.from(new Set((rows || []).map(getPatrimonioMonthKey).filter(Boolean))).sort();
+}
+
+function getPatrimonioMonthLabel(monthKey) {
+  if (!/^\d{4}-\d{2}$/.test(monthKey)) return "—";
+
+  return formatDossierMonthDivider(`${monthKey}-01`);
+}
+
+function populatePatrimonioYearSelect() {
+  if (!patrimonioYearSelect) return;
+
+  const years = Array.from(new Set(patrimonioTableState.availableMonths.map((monthKey) => monthKey.slice(0, 4))))
+    .sort((first, second) => second.localeCompare(first));
+
+  patrimonioYearSelect.innerHTML = "";
+  years.forEach((year) => {
+    const option = document.createElement("option");
+    option.value = year;
+    option.textContent = year;
+    patrimonioYearSelect.appendChild(option);
+  });
+}
+
+function populatePatrimonioMonthSelect() {
+  if (!patrimonioMonthSelect) return;
+
+  const selectedYear = String(patrimonioYearSelect?.value || patrimonioTableState.selectedMonth.slice(0, 4));
+  const availableForYear = new Set(
+    patrimonioTableState.availableMonths
+      .filter((monthKey) => monthKey.slice(0, 4) === selectedYear)
+      .map((monthKey) => monthKey.slice(5, 7)),
+  );
+  const monthNames = [
+    "Gennaio",
+    "Febbraio",
+    "Marzo",
+    "Aprile",
+    "Maggio",
+    "Giugno",
+    "Luglio",
+    "Agosto",
+    "Settembre",
+    "Ottobre",
+    "Novembre",
+    "Dicembre",
+  ];
+
+  patrimonioMonthSelect.innerHTML = "";
+  monthNames.forEach((monthName, index) => {
+    const monthValue = String(index + 1).padStart(2, "0");
+    const option = document.createElement("option");
+    option.value = monthValue;
+    option.textContent = monthName;
+    option.disabled = !availableForYear.has(monthValue);
+    patrimonioMonthSelect.appendChild(option);
+  });
+}
+
+function syncPatrimonioPeriodControls() {
+  const selectedMonth = patrimonioTableState.selectedMonth;
+  if (!selectedMonth) return;
+
+  const selectedYear = selectedMonth.slice(0, 4);
+  const selectedMonthValue = selectedMonth.slice(5, 7);
+
+  if (patrimonioYearSelect) {
+    patrimonioYearSelect.value = selectedYear;
+  }
+  populatePatrimonioMonthSelect();
+  if (patrimonioMonthSelect) {
+    patrimonioMonthSelect.value = selectedMonthValue;
+  }
+
+  const monthIndex = patrimonioTableState.availableMonths.indexOf(selectedMonth);
+  if (patrimonioPrevMonthButton) {
+    patrimonioPrevMonthButton.disabled = monthIndex <= 0;
+  }
+  if (patrimonioNextMonthButton) {
+    patrimonioNextMonthButton.disabled = monthIndex < 0 || monthIndex >= patrimonioTableState.availableMonths.length - 1;
+  }
+}
+
+function selectPatrimonioMonth(monthKey) {
+  if (!patrimonioTableState.availableMonths.includes(monthKey)) return;
+
+  patrimonioTableState.selectedMonth = monthKey;
+  patrimonioTableState.expandedKey = "";
+  syncPatrimonioPeriodControls();
+  renderPatrimonioCurrentMonth();
+}
+
+function selectNearestPatrimonioMonthForYear(year) {
+  const monthsForYear = patrimonioTableState.availableMonths
+    .filter((monthKey) => monthKey.slice(0, 4) === String(year))
+    .sort();
+
+  if (!monthsForYear.length) return;
+
+  const currentMonth = patrimonioTableState.selectedMonth.slice(5, 7);
+  const exactMonth = monthsForYear.find((monthKey) => monthKey.slice(5, 7) === currentMonth);
+  selectPatrimonioMonth(exactMonth || monthsForYear.at(-1));
+}
+
+function renderPatrimonioCurrentMonth() {
+  if (!patrimonioTableBody || !patrimonioLayout) return;
+
+  patrimonioTableBody.innerHTML = "";
+
+  const rows = patrimonioTableState.rows;
+  const selectedMonth = patrimonioTableState.selectedMonth;
+  const monthRows = rows.filter((point) => getPatrimonioMonthKey(point) === selectedMonth);
+
+  if (rows.length === 0 || !selectedMonth) {
+    patrimonioLayout.hidden = false;
+    if (patrimonioTableWrap) patrimonioTableWrap.hidden = true;
+    setPatrimonioTableState("Nessun dato patrimoniale disponibile.");
+    if (patrimonioTableSubtitle) patrimonioTableSubtitle.textContent = "—";
+    if (patrimonioPeriodSummary) patrimonioPeriodSummary.textContent = "—";
+    if (patrimonioMonthSummary) patrimonioMonthSummary.textContent = "—";
+    return;
+  }
+
+  if (monthRows.length === 0) {
+    patrimonioLayout.hidden = false;
+    if (patrimonioTableWrap) patrimonioTableWrap.hidden = true;
+    setPatrimonioTableState("Nessuna lettura disponibile per il mese selezionato.");
+    if (patrimonioPeriodSummary) patrimonioPeriodSummary.textContent = getPatrimonioMonthLabel(selectedMonth);
+    if (patrimonioMonthSummary) patrimonioMonthSummary.textContent = getPatrimonioMonthLabel(selectedMonth);
+    return;
+  }
+
+  monthRows.forEach((point) => {
+    const row = document.createElement("tr");
+    const rowIndex = rows.findIndex((candidate) => getPatrimonioRowKey(candidate) === getPatrimonioRowKey(point));
+    const checkingValue = Number(point.checkingValue ?? point.contoCorrenteValue);
+    const portfolioValue = Number(point.portfolioValue);
+    const portfolioJackValue = Number(point.portfolioJackValue);
+    const portfolioFigliValue = Number(point.portfolioFigliValue);
+    const revolutPersonalValue = Number(point.revolutPersonalValue);
+    const finecoJack = checkingValue + portfolioJackValue;
+    const finecoFigli = portfolioFigliValue;
+    const finecoTotal = checkingValue + portfolioValue;
+    const patrimonyTotal = Number(point.patrimonyTotal ?? point.value);
+    const previousPoint = rowIndex >= 0 ? rows[rowIndex + 1] : null;
+    const previousTotal = Number(previousPoint?.patrimonyTotal ?? previousPoint?.value);
+
+    renderPatrimonioExpandCell(row, point);
+    appendPatrimonioCell(row).textContent = formatPatrimonioDate(point.period);
+    renderPatrimonioMoneyCell(appendPatrimonioCell(row, "num"), checkingValue);
+    renderPatrimonioMoneyCell(appendPatrimonioCell(row, "num"), portfolioValue);
+    renderPatrimonioMoneyCell(appendPatrimonioCell(row, "num"), finecoTotal);
+    renderPatrimonioMoneyCell(appendPatrimonioCell(row, "num"), revolutPersonalValue);
+    renderPatrimonioMoneyCell(appendPatrimonioCell(row, "num"), patrimonyTotal);
+    renderPatrimonioDeltaCell(appendPatrimonioCell(row, "num"), patrimonyTotal, previousTotal);
+    renderPatrimonioPercentDeltaCell(appendPatrimonioCell(row, "num"), patrimonyTotal, previousTotal);
+
+    patrimonioTableBody.appendChild(row);
+
+    if (patrimonioTableState.expandedKey === getPatrimonioRowKey(point)) {
+      appendPatrimonioDetailRow({
+        portfolioValue,
+        portfolioJackValue,
+        portfolioFigliValue,
+        finecoTotal,
+        finecoJack,
+        finecoFigli,
+      });
+    }
+  });
+
+  patrimonioLayout.hidden = false;
+  if (patrimonioTableWrap) patrimonioTableWrap.hidden = false;
+  setPatrimonioTableState("");
+
+  const oldest = monthRows.at(-1)?.period;
+  const newest = monthRows[0]?.period;
+  if (patrimonioTableSubtitle) {
+    patrimonioTableSubtitle.textContent = `${getPatrimonioMonthLabel(selectedMonth)} · ${monthRows.length} letture`;
+  }
+  if (patrimonioPeriodSummary) {
+    patrimonioPeriodSummary.textContent = `${getPatrimonioMonthLabel(selectedMonth)} · ${monthRows.length} letture`;
+  }
+  if (patrimonioMonthSummary) {
+    patrimonioMonthSummary.textContent = `${getPatrimonioMonthLabel(selectedMonth)} · ${monthRows.length} letture · ${formatPatrimonioDate(oldest)} → ${formatPatrimonioDate(newest)}`;
+  }
+}
+
+function renderPatrimonioTable(series) {
+  patrimonioTableState.rows = normalizePatrimonioRows(series);
+  patrimonioTableState.availableMonths = getPatrimonioAvailableMonths(patrimonioTableState.rows);
+  patrimonioTableState.selectedMonth = patrimonioTableState.availableMonths.at(-1) || "";
+  patrimonioTableState.expandedKey = "";
+  populatePatrimonioYearSelect();
+  syncPatrimonioPeriodControls();
+  renderPatrimonioCurrentMonth();
+}
+
+function initPatrimonioPeriodControls() {
+  if (patrimonioYearSelect) {
+    patrimonioYearSelect.addEventListener("change", () => {
+      selectNearestPatrimonioMonthForYear(patrimonioYearSelect.value);
+    });
+  }
+
+  if (patrimonioMonthSelect) {
+    patrimonioMonthSelect.addEventListener("change", () => {
+      const year = String(patrimonioYearSelect?.value || "");
+      const month = String(patrimonioMonthSelect.value || "");
+      selectPatrimonioMonth(`${year}-${month}`);
+    });
+  }
+
+  if (patrimonioPrevMonthButton) {
+    patrimonioPrevMonthButton.addEventListener("click", () => {
+      const currentIndex = patrimonioTableState.availableMonths.indexOf(patrimonioTableState.selectedMonth);
+      if (currentIndex > 0) {
+        selectPatrimonioMonth(patrimonioTableState.availableMonths[currentIndex - 1]);
+      }
+    });
+  }
+
+  if (patrimonioNextMonthButton) {
+    patrimonioNextMonthButton.addEventListener("click", () => {
+      const currentIndex = patrimonioTableState.availableMonths.indexOf(patrimonioTableState.selectedMonth);
+      if (currentIndex >= 0 && currentIndex < patrimonioTableState.availableMonths.length - 1) {
+        selectPatrimonioMonth(patrimonioTableState.availableMonths[currentIndex + 1]);
+      }
+    });
+  }
+}
+
+async function loadPatrimonioPage() {
+  if (!supabaseClient) {
+    if (patrimonioLayout) patrimonioLayout.hidden = false;
+    if (patrimonioTableWrap) patrimonioTableWrap.hidden = true;
+    setPatrimonioTableState("Credenziali Supabase mancanti.", "error");
+    return;
+  }
+
+  if (patrimonioLayout) patrimonioLayout.hidden = false;
+  if (patrimonioTableWrap) patrimonioTableWrap.hidden = true;
+  setPatrimonioTableState("Caricamento patrimonio...");
+
+  try {
+    const series = await fetchDashboardWealthSeries();
+    renderPatrimonioTable(series);
+  } catch (error) {
+    console.error("Errore caricamento patrimonio:", error);
+    if (patrimonioLayout) patrimonioLayout.hidden = false;
+    if (patrimonioTableWrap) patrimonioTableWrap.hidden = true;
+    setPatrimonioTableState(`Errore caricamento patrimonio: ${error.message || error}`, "error");
+  }
 }
 
 function drawDashboardWealthChart(series) {
