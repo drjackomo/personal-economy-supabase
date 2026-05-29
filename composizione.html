@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="it">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="robots" content="noindex, nofollow, noarchive, nosnippet">
+    <title>Composizione - Personal Economy</title>
+    <link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
+    <link rel="stylesheet" href="css/styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="js/app.js" defer></script>
+  </head>
+  <body>
+    <div id="navbar-root"></div>
+
+    <main id="composizione-page" class="app dashboard-page composizione-page">
+      <div class="dashboard-heading">
+        <h1>Composizione</h1>
+        <p class="subtitle">Come sono distribuiti oggi i tuoi investimenti</p>
+      </div>
+
+      <div id="composizione-state" class="dashboard-chart-state is-visible" aria-live="polite">Caricamento composizione...</div>
+
+      <section id="composizione-cards" class="dashboard-cards composizione-cards" aria-label="Riepilogo composizione"></section>
+
+      <section class="dashboard-chart-section composizione-mix-section" aria-labelledby="composizione-mix-title">
+        <div class="dashboard-chart-header chart-card-title">
+          <div>
+            <h2 id="composizione-mix-title" class="chart-title">Composizione portafoglio</h2>
+            <div class="chart-subtitle">Le tre componenti principali degli investimenti</div>
+          </div>
+        </div>
+        <div id="composizione-allocation-mix" class="composizione-bars composizione-bars-large"></div>
+      </section>
+
+      <section class="dashboard-chart-section composizione-top-card" aria-labelledby="composizione-top-title">
+        <div class="dashboard-chart-header chart-card-title">
+          <div>
+            <h2 id="composizione-top-title" class="chart-title">Dove sono concentrati i soldi</h2>
+            <div class="chart-subtitle">Titolo principale, Top 5 e peso dei titoli maggiori</div>
+          </div>
+        </div>
+        <div id="composizione-focus-summary" class="composizione-focus-summary"></div>
+        <div id="composizione-top-exposures" class="composizione-top-exposures"></div>
+      </section>
+
+      <section class="composizione-simple-grid" aria-label="Analisi portafoglio">
+        <section class="dashboard-chart-section composizione-analysis-card" aria-labelledby="composizione-categoria-title">
+          <h2 id="composizione-categoria-title" class="chart-title">Tipologia strumenti</h2>
+          <div id="composizione-allocation-category" class="composizione-bars"></div>
+        </section>
+
+        <section class="dashboard-chart-section composizione-analysis-card" aria-labelledby="composizione-rischio-title">
+          <h2 id="composizione-rischio-title" class="chart-title">Rischio</h2>
+          <div id="composizione-allocation-risk" class="composizione-bars"></div>
+        </section>
+      </section>
+
+      <section class="dashboard-chart-section composizione-table-card" aria-labelledby="composizione-table-title">
+        <div class="dashboard-chart-header chart-card-title">
+          <div>
+            <h2 id="composizione-table-title" class="chart-title">Elenco titoli</h2>
+            <div id="composizione-table-subtitle" class="chart-subtitle">—</div>
+          </div>
+        </div>
+
+        <div class="dossier-table-scroll composizione-table-wrap">
+          <table id="composizione-table" class="transactions-table dossier-table composizione-table">
+            <thead>
+              <tr>
+                <th>Titolo</th>
+                <th>Categoria</th>
+                <th>Rischio</th>
+                <th class="num">Peso %</th>
+                <th class="num">Valore</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+
+      <details class="dashboard-chart-section composizione-technical-card">
+        <summary>Dettagli tecnici</summary>
+        <div class="dossier-table-scroll composizione-table-wrap">
+          <table id="composizione-technical-table" class="transactions-table dossier-table composizione-technical-table">
+            <thead>
+              <tr>
+                <th>Titolo</th>
+                <th>ISIN</th>
+                <th>Categoria</th>
+                <th>Tipo strumento</th>
+                <th>Rischio</th>
+                <th>Area geografica</th>
+                <th>Settore</th>
+                <th class="num">% azionario</th>
+                <th class="num">% obbligazionario</th>
+                <th>ESG</th>
+                <th>Capitale protetto</th>
+                <th class="num">Peso %</th>
+                <th class="num">Valore</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </details>
+    </main>
+  </body>
+</html>

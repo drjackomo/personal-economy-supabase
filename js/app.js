@@ -83,6 +83,19 @@ const titoliSeriesNoneButton = document.getElementById("titoli-series-none");
 const titoliSeriesCloseButton = document.getElementById("titoli-series-close");
 const titoliSeriesList = document.getElementById("titoli-series-list");
 const titoliHistoryStateElement = document.getElementById("titoli-history-state");
+const composizionePageRoot = document.getElementById("composizione-page");
+const composizioneStateElement = document.getElementById("composizione-state");
+const composizioneCardsRoot = document.getElementById("composizione-cards");
+const composizioneFocusSummaryRoot = document.getElementById("composizione-focus-summary");
+const composizioneTopExposuresRoot = document.getElementById("composizione-top-exposures");
+const composizioneTableSubtitle = document.getElementById("composizione-table-subtitle");
+const composizioneTableBody = document.querySelector("#composizione-table tbody");
+const composizioneTechnicalTableBody = document.querySelector("#composizione-technical-table tbody");
+const composizioneAllocationGeography = document.getElementById("composizione-allocation-geography");
+const composizioneAllocationCategory = document.getElementById("composizione-allocation-category");
+const composizioneAllocationRisk = document.getElementById("composizione-allocation-risk");
+const composizioneAllocationSector = document.getElementById("composizione-allocation-sector");
+const composizioneAllocationMix = document.getElementById("composizione-allocation-mix");
 const dashboardCardsRoot = document.getElementById("dashboard-cards");
 const dashboardErrorElement = document.getElementById("dashboard-error");
 const patrimonioPageRoot = document.getElementById("patrimonio-page");
@@ -267,6 +280,11 @@ let titoliState = {
   historySelections: {},
 };
 let titoliChart = null;
+let portfolioCompositionState = {
+  rows: [],
+  summary: null,
+  allocations: null,
+};
 let wealthTrendSeries = [];
 let wealthTrendChart = null;
 let adminAlertModalInitialized = false;
@@ -724,6 +742,27 @@ async function initAuthenticatedApp(user) {
 
   if (titoliPageRoot) {
     initTitoliPage();
+  }
+
+  console.log("[Composizione] compositionPageDetected", {
+    compositionPageDetected: Boolean(composizionePageRoot),
+    pathname: window.location.pathname,
+    selectors: {
+      state: Boolean(composizioneStateElement),
+      cards: Boolean(composizioneCardsRoot),
+      focusSummary: Boolean(composizioneFocusSummaryRoot),
+      topExposures: Boolean(composizioneTopExposuresRoot),
+      tableBody: Boolean(composizioneTableBody),
+      technicalTableBody: Boolean(composizioneTechnicalTableBody),
+      geography: Boolean(composizioneAllocationGeography),
+      category: Boolean(composizioneAllocationCategory),
+      risk: Boolean(composizioneAllocationRisk),
+      sector: Boolean(composizioneAllocationSector),
+      mix: Boolean(composizioneAllocationMix),
+    },
+  });
+  if (composizionePageRoot) {
+    loadPortfolioComposition();
   }
 
   if (dossierPageRoot) {
@@ -5392,6 +5431,898 @@ function isTitoliAssetActive(asset) {
   const visible = getFirstDefined(asset, ["visible"], false);
   const isClosed = getFirstDefined(asset, ["is_closed"], false);
   return visible === true && isClosed !== true;
+}
+
+function setPortfolioCompositionState(message, type = "info") {
+  if (!composizioneStateElement) return;
+
+  composizioneStateElement.textContent = message || "";
+  composizioneStateElement.className = `dashboard-chart-state ${message ? "is-visible" : ""} ${type ? `is-${type}` : ""}`;
+}
+
+function getPortfolioCompositionProfileValue(profile, keys, fallback = "Non classificato") {
+  const value = getFirstDefined(profile || {}, keys, fallback);
+  const text = String(value ?? "").trim();
+  return text || fallback;
+}
+
+function parsePortfolioCompositionPercent(value) {
+  if (value === true) return 100;
+  if (value === false || value === null || value === undefined) return 0;
+
+  const parsed = parseTitoliValue(value);
+  if (parsed === null) return 0;
+  if (parsed > 0 && parsed <= 1) return parsed * 100;
+  return Math.max(0, Math.min(100, parsed));
+}
+
+function parsePortfolioCompositionBoolean(value) {
+  if (value === true) return true;
+  if (value === false || value === null || value === undefined) return false;
+
+  const text = String(value).trim().toLowerCase();
+  return ["1", "true", "yes", "y", "si", "s", "protetto", "protected"].includes(text);
+}
+
+function getPortfolioCompositionRiskValue(profile) {
+  const value = getFirstDefined(profile || {}, [
+    "risk",
+    "rischio",
+    "risk_level",
+    "risk_score",
+    "srri",
+    "sri",
+  ], "");
+  const label = String(value ?? "").trim();
+  const numeric = parseTitoliValue(value);
+
+  return {
+    label: label || "Non classificato",
+    numeric: Number.isFinite(numeric) ? numeric : null,
+  };
+}
+
+function getPortfolioCompositionProfile(asset, profile) {
+  const risk = getPortfolioCompositionRiskValue(profile);
+  const protectedRaw = getFirstDefined(profile || {}, [
+    "capital_protected",
+    "capitale_protetto",
+    "protected_capital",
+    "capitale_garantito",
+    "liquidita",
+    "liquidity",
+  ], false);
+
+  return {
+    category: getPortfolioCompositionProfileValue(profile, [
+      "category",
+      "categoria",
+      "asset_class",
+      "finance_category",
+      "macro_category",
+    ]),
+    instrumentType: getPortfolioCompositionProfileValue(profile, [
+      "instrument_type",
+      "tipo_strumento",
+      "real_type",
+      "type",
+      "tipo",
+    ]),
+    riskLabel: risk.label,
+    riskNumeric: risk.numeric,
+    geography: getPortfolioCompositionProfileValue(profile, [
+      "geography",
+      "area_geografica",
+      "geo_area",
+      "region",
+      "country_area",
+    ]),
+    sector: getPortfolioCompositionProfileValue(profile, [
+      "sector",
+      "settore",
+      "industry",
+      "comparto",
+    ]),
+    equityPct: parsePortfolioCompositionPercent(getFirstDefined(profile || {}, [
+      "equity_pct",
+      "azionario_pct",
+      "stock_pct",
+      "equity_percentage",
+      "percentage_equity",
+      "pct_azionario",
+    ], 0)),
+    bondPct: parsePortfolioCompositionPercent(getFirstDefined(profile || {}, [
+      "bond_pct",
+      "obbligazionario_pct",
+      "fixed_income_pct",
+      "bond_percentage",
+      "percentage_bond",
+      "pct_obbligazionario",
+    ], 0)),
+    esg: getPortfolioCompositionProfileValue(profile, [
+      "esg",
+      "esg_rating",
+      "sustainability",
+      "sostenibilita",
+    ], "N/D"),
+    capitalProtected: parsePortfolioCompositionBoolean(protectedRaw),
+    profileMissing: !profile,
+    name: getTitoliAssetName(asset),
+    isin: normalizeTitoliId(getTitoliAssetIsin(asset)),
+    dossierId: normalizeTitoliId(getTitoliAssetDossierId(asset)),
+  };
+}
+
+function getPortfolioCompositionAssetKey(asset) {
+  const dossierId = normalizeTitoliId(getTitoliAssetDossierId(asset));
+  const isin = normalizeTitoliId(getTitoliAssetIsin(asset));
+  return `${dossierId}|${isin}`;
+}
+
+async function fetchPortfolioCompositionSnapshots(activeAssets) {
+  const uniqueIsins = Array.from(new Set(
+    (activeAssets || [])
+      .map((asset) => normalizeTitoliId(getTitoliAssetIsin(asset)))
+      .filter(Boolean),
+  ));
+  const targetKeys = new Set((activeAssets || []).map(getPortfolioCompositionAssetKey).filter((key) => key !== "|"));
+  const snapshots = [];
+  const matchedKeys = new Set();
+  const pageSize = 500;
+  const isinBatchSize = 40;
+
+  if (!uniqueIsins.length) {
+    return {
+      data: [],
+      error: null,
+      meta: {
+        queriedIsins: 0,
+        targetKeys: targetKeys.size,
+        matchedKeys: 0,
+        batches: 0,
+      },
+    };
+  }
+
+  try {
+    for (let index = 0; index < uniqueIsins.length; index += isinBatchSize) {
+      const isinBatch = uniqueIsins.slice(index, index + isinBatchSize);
+      const batchTargetKeys = new Set(
+        (activeAssets || [])
+          .filter((asset) => isinBatch.includes(normalizeTitoliId(getTitoliAssetIsin(asset))))
+          .map(getPortfolioCompositionAssetKey),
+      );
+      let from = 0;
+
+      while (true) {
+        const to = from + pageSize - 1;
+        const { data, error } = await supabaseClient
+          .from("portfolio_snapshots")
+          .select("snapshot_date,dossier_id,isin,asset_name,market_value")
+          .in("isin", isinBatch)
+          .order("snapshot_date", { ascending: false })
+          .range(from, to);
+
+        if (error) {
+          return {
+            data: snapshots,
+            error,
+            meta: {
+              queriedIsins: uniqueIsins.length,
+              targetKeys: targetKeys.size,
+              matchedKeys: matchedKeys.size,
+              failedBatch: isinBatch,
+              from,
+              to,
+            },
+          };
+        }
+
+        const batch = data ?? [];
+        snapshots.push(...batch);
+        batch.forEach((snapshot) => {
+          const key = `${normalizeTitoliId(getTitoliSnapshotDossierId(snapshot))}|${normalizeTitoliId(getTitoliSnapshotIsin(snapshot))}`;
+          if (batchTargetKeys.has(key)) matchedKeys.add(key);
+        });
+
+        const batchComplete = Array.from(batchTargetKeys).every((key) => matchedKeys.has(key));
+        if (batch.length < pageSize || batchComplete) break;
+        from += pageSize;
+      }
+    }
+
+    return {
+      data: snapshots,
+      error: null,
+      meta: {
+        queriedIsins: uniqueIsins.length,
+        targetKeys: targetKeys.size,
+        matchedKeys: matchedKeys.size,
+        batches: Math.ceil(uniqueIsins.length / isinBatchSize),
+        sampleSnapshot: snapshots[0] || null,
+      },
+    };
+  } catch (error) {
+    return {
+      data: snapshots,
+      error,
+      meta: {
+        queriedIsins: uniqueIsins.length,
+        targetKeys: targetKeys.size,
+        matchedKeys: matchedKeys.size,
+      },
+    };
+  }
+}
+
+function buildLatestPortfolioSnapshotMap(assets, snapshots) {
+  const activeAssetKeys = new Set((assets || []).map(getPortfolioCompositionAssetKey));
+  const activeAssetIsins = new Set((assets || []).map((asset) => normalizeTitoliId(getTitoliAssetIsin(asset))).filter(Boolean));
+  const latestByKey = new Map();
+
+  (snapshots || []).forEach((snapshot) => {
+    const dateIso = normalizeDashboardISODate(getTitoliSnapshotDate(snapshot));
+    const value = parseTitoliValue(getTitoliSnapshotValue(snapshot));
+    const isin = normalizeTitoliId(getTitoliSnapshotIsin(snapshot));
+    const dossierId = normalizeTitoliId(getTitoliSnapshotDossierId(snapshot));
+    if (!dateIso || value === null || !isin) return;
+
+    const key = `${dossierId}|${isin}`;
+    if (!activeAssetKeys.has(key) && !activeAssetIsins.has(isin)) return;
+
+    const previous = latestByKey.get(key);
+    if (!previous || dateIso > previous.dateIso) {
+      latestByKey.set(key, { snapshot, dateIso, value });
+    }
+
+    const isinPrevious = latestByKey.get(isin);
+    if (!isinPrevious || dateIso > isinPrevious.dateIso) {
+      latestByKey.set(isin, { snapshot, dateIso, value });
+    }
+  });
+
+  console.log("[Composizione] latestSnapshotsComputed", {
+    latestSnapshotsComputed: latestByKey.size,
+    activeAssetKeys: activeAssetKeys.size,
+    activeAssetIsins: activeAssetIsins.size,
+    sampleSnapshot: snapshots?.[0] || null,
+  });
+
+  return latestByKey;
+}
+
+function normalizePortfolioCompositionRows(assets, profiles, snapshots) {
+  const activeAssets = (assets || []).filter(isTitoliAssetActive).sort(sortTitoliAssets);
+  const profileMap = buildAssetProfileMap(profiles);
+  const latestSnapshotMap = buildLatestPortfolioSnapshotMap(activeAssets, snapshots);
+
+  const rows = activeAssets.map((asset) => {
+    const isin = normalizeTitoliId(getTitoliAssetIsin(asset));
+    const profile = profileMap.get(isin) || null;
+    const latestSnapshot = latestSnapshotMap.get(getPortfolioCompositionAssetKey(asset)) || latestSnapshotMap.get(isin) || null;
+    const normalized = getPortfolioCompositionProfile(asset, profile);
+
+    return {
+      ...normalized,
+      currentValue: latestSnapshot?.value ?? null,
+      snapshotDate: latestSnapshot?.dateIso || "",
+      raw: { asset, profile, snapshot: latestSnapshot?.snapshot || null },
+    };
+  });
+
+  console.log("[Composizione] compositionRowsComputed", {
+    compositionRowsComputed: rows.length,
+    rowsWithSnapshot: rows.filter((row) => Number.isFinite(row.currentValue)).length,
+    rowsWithoutSnapshot: rows.filter((row) => !Number.isFinite(row.currentValue)).length,
+    rowsWithProfile: rows.filter((row) => !row.profileMissing).length,
+    rowsWithoutProfile: rows.filter((row) => row.profileMissing).length,
+    sampleRow: rows[0] || null,
+  });
+
+  return rows;
+}
+
+function addPortfolioAllocationValue(map, label, value) {
+  const normalizedLabel = String(label || "Non classificato").trim() || "Non classificato";
+  const amount = Number(value);
+  if (!Number.isFinite(amount) || amount <= 0) return;
+  map.set(normalizedLabel, (map.get(normalizedLabel) || 0) + amount);
+}
+
+function mapToSortedPortfolioAllocation(map, totalValue) {
+  return Array.from(map.entries())
+    .map(([label, value]) => ({
+      label,
+      value,
+      percent: totalValue > 0 ? (value / totalValue) * 100 : 0,
+    }))
+    .sort((first, second) => second.value - first.value);
+}
+
+function computePortfolioComposition(rows) {
+  const valuedRows = (rows || []).filter((row) => Number.isFinite(row.currentValue) && row.currentValue > 0);
+  const totalValue = valuedRows.reduce((total, row) => total + row.currentValue, 0);
+  const topRows = valuedRows
+    .slice()
+    .sort((first, second) => second.currentValue - first.currentValue)
+    .map((row) => ({
+      ...row,
+      weightPct: totalValue > 0 ? (row.currentValue / totalValue) * 100 : 0,
+    }));
+  const weighted = (selector) => {
+    if (totalValue <= 0) return 0;
+    return valuedRows.reduce((total, row) => total + (selector(row) * row.currentValue), 0) / totalValue;
+  };
+  const riskRows = valuedRows.filter((row) => Number.isFinite(row.riskNumeric));
+  const riskValueTotal = riskRows.reduce((total, row) => total + row.currentValue, 0);
+  const averageRisk = riskValueTotal > 0
+    ? riskRows.reduce((total, row) => total + (row.riskNumeric * row.currentValue), 0) / riskValueTotal
+    : null;
+
+  const geographyMap = new Map();
+  const categoryMap = new Map();
+  const riskBandMap = new Map();
+  const sectorMap = new Map();
+  valuedRows.forEach((row) => {
+    addPortfolioAllocationValue(geographyMap, row.geography, row.currentValue);
+    addPortfolioAllocationValue(categoryMap, row.category, row.currentValue);
+    addPortfolioAllocationValue(riskBandMap, getPortfolioCompositionRiskBand(row), row.currentValue);
+    addPortfolioAllocationValue(sectorMap, row.sector, row.currentValue);
+  });
+
+  const isProtectedOrCash = (row) => {
+    const text = `${row.category || ""} ${row.instrumentType || ""}`.toLowerCase();
+    return row.capitalProtected || /(liquid|cash|monetario|protected|protett)/.test(text);
+  };
+  const protectedValue = valuedRows
+    .filter(isProtectedOrCash)
+    .reduce((total, row) => total + row.currentValue, 0);
+
+  const allocations = {
+    geography: mapToSortedPortfolioAllocation(geographyMap, totalValue),
+    category: mapToSortedPortfolioAllocation(categoryMap, totalValue),
+    risk: mapToSortedPortfolioAllocation(riskBandMap, totalValue),
+    sector: mapToSortedPortfolioAllocation(sectorMap, totalValue),
+    mix: [
+      { label: "Azionario", value: totalValue * (weighted((row) => row.equityPct) / 100), percent: weighted((row) => row.equityPct) },
+      { label: "Obbligazionario", value: totalValue * (weighted((row) => row.bondPct) / 100), percent: weighted((row) => row.bondPct) },
+      { label: "Capitale protetto", value: protectedValue, percent: totalValue > 0 ? (protectedValue / totalValue) * 100 : 0 },
+    ],
+  };
+
+  return {
+    summary: {
+      totalValue,
+      assetCount: rows?.length || 0,
+      valuedAssetCount: valuedRows.length,
+      equityPct: weighted((row) => row.equityPct),
+      bondPct: weighted((row) => row.bondPct),
+      portfolioProfile: getPortfolioCompositionProfileLabel(weighted((row) => row.equityPct)),
+      averageRisk,
+      protectedPct: totalValue > 0 ? (protectedValue / totalValue) * 100 : 0,
+      missingProfiles: (rows || []).filter((row) => row.profileMissing).length,
+      concentrationTop3Pct: topRows.slice(0, 3).reduce((total, row) => total + row.weightPct, 0),
+      concentrationTop5Pct: topRows.slice(0, 5).reduce((total, row) => total + row.weightPct, 0),
+      topHolding: topRows[0] || null,
+      topExposures: topRows.slice(0, 5),
+    },
+    allocations,
+  };
+}
+
+function formatPortfolioCompositionPercent(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return "—";
+
+  return `${new Intl.NumberFormat("it-IT", {
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+  }).format(number)}%`;
+}
+
+function formatPortfolioCompositionRisk(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return "—";
+
+  return new Intl.NumberFormat("it-IT", {
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+  }).format(number);
+}
+
+function getPortfolioCompositionProfileLabel(equityPct) {
+  const number = Number(equityPct);
+  if (!Number.isFinite(number)) return "Non definito";
+  if (number < 30) return "Prudente";
+  if (number <= 60) return "Bilanciato";
+  return "Dinamico";
+}
+
+function getPortfolioCompositionRiskBand(row) {
+  const risk = Number(row?.riskNumeric);
+  if (!Number.isFinite(risk)) return "Non classificato";
+  if (risk <= 3) return "Basso rischio";
+  if (risk <= 6) return "Medio rischio";
+  return "Alto rischio";
+}
+
+function portfolioCompositionBadgeClass(value, type = "neutral") {
+  const text = String(value || "").toLowerCase();
+  if (type === "risk") {
+    if (/(alto|high|7|6)/.test(text)) return "is-risk-high";
+    if (/(medio|medium|4|5)/.test(text)) return "is-risk-medium";
+    if (/(basso|low|1|2|3)/.test(text)) return "is-risk-low";
+  }
+  if (type === "category") {
+    if (/(azion|equity|stock)/.test(text)) return "is-equity";
+    if (/(obblig|bond|fixed)/.test(text)) return "is-bond";
+    if (/(liquid|cash|monetario)/.test(text)) return "is-cash";
+  }
+  if (type === "positive") return "is-positive";
+  if (type === "warning") return "is-warning";
+  return "is-neutral";
+}
+
+function createPortfolioCompositionBadge(label, className = "is-neutral") {
+  const badge = document.createElement("span");
+  badge.className = `composizione-badge ${className}`;
+  badge.textContent = label || "—";
+  return badge;
+}
+
+function renderPortfolioCompositionCards(summary) {
+  if (!composizioneCardsRoot) return;
+
+  composizioneCardsRoot.textContent = "";
+  const cards = [
+    {
+      title: "Totale portafoglio",
+      value: formatEuro(summary.totalValue),
+      splits: [{ label: "Titoli valorizzati", value: String(summary.valuedAssetCount) }],
+      className: "dashboard-card-portfolio",
+    },
+    {
+      title: "Numero titoli",
+      value: String(summary.assetCount),
+      splits: [{ label: "In portafoglio", value: `${summary.valuedAssetCount} con valore` }],
+      className: "dashboard-card-cc",
+    },
+    {
+      title: "Profilo portafoglio",
+      value: summary.portfolioProfile || "Non definito",
+      splits: [{ label: "Azionario", value: formatPortfolioCompositionPercent(summary.equityPct) }],
+      className: "composizione-card-equity",
+    },
+    {
+      title: "Rischio medio",
+      value: formatPortfolioCompositionRisk(summary.averageRisk),
+      splits: [{ label: "Calcolo", value: "Media ponderata" }],
+      className: "composizione-card-risk",
+    },
+  ];
+
+  cards.forEach((card) => {
+    const article = document.createElement("article");
+    article.className = `dashboard-card composizione-summary-card ${card.className}`;
+    const splits = (card.splits || [])
+      .map((split) => `
+        <div class="dashboard-card-split">
+          <span>${escapeTitoliHtml(split.label)}</span>
+          <strong>${escapeTitoliHtml(split.value)}</strong>
+        </div>
+      `)
+      .join("");
+    article.innerHTML = `
+      <div class="dashboard-card-header">
+        <h2>${escapeTitoliHtml(card.title)}</h2>
+      </div>
+      <div class="dashboard-card-value">${escapeTitoliHtml(card.value)}</div>
+      <div class="dashboard-card-splits">
+        ${splits}
+      </div>
+    `;
+    composizioneCardsRoot.appendChild(article);
+  });
+}
+
+function renderPortfolioAllocation(container, rows, emptyMessage = "Dati non ancora classificati") {
+  if (!container) return;
+
+  container.textContent = "";
+  const visibleRows = (rows || []).filter((row) => Number.isFinite(row.percent) && row.percent > 0);
+  const isSingleUnclassified = visibleRows.length === 1 &&
+    visibleRows[0].percent >= 99.9 &&
+    /^non classificato$/i.test(String(visibleRows[0].label || "").trim());
+
+  if (!visibleRows.length || isSingleUnclassified) {
+    const empty = document.createElement("div");
+    empty.className = "composizione-empty";
+    empty.textContent = emptyMessage;
+    container.appendChild(empty);
+    return;
+  }
+
+  visibleRows.slice(0, 8).forEach((row, index) => {
+    const item = document.createElement("div");
+    item.className = "composizione-bar-item";
+    item.style.setProperty("--bar-width", `${Math.max(2, Math.min(100, row.percent))}%`);
+    item.style.setProperty("--bar-accent", [
+      "#2563eb",
+      "#16a34a",
+      "#d97706",
+      "#7c3aed",
+      "#0891b2",
+      "#be123c",
+      "#4f46e5",
+      "#0f766e",
+    ][index % 8]);
+    item.innerHTML = `
+      <div class="composizione-bar-header">
+        <span>${escapeTitoliHtml(row.label)}</span>
+        <strong>${escapeTitoliHtml(formatPortfolioCompositionPercent(row.percent))}</strong>
+      </div>
+      <div class="composizione-bar-track"><span></span></div>
+      <div class="composizione-bar-value">${escapeTitoliHtml(formatEuro(row.value))}</div>
+    `;
+    container.appendChild(item);
+  });
+}
+
+function renderPortfolioTopExposures(summary) {
+  if (!composizioneTopExposuresRoot) return;
+
+  composizioneTopExposuresRoot.textContent = "";
+  if (composizioneFocusSummaryRoot) {
+    const topHolding = summary?.topHolding || null;
+    composizioneFocusSummaryRoot.innerHTML = topHolding ? `
+      <div class="composizione-focus-item composizione-focus-main">
+        <span>Titolo principale</span>
+        <strong>${escapeTitoliHtml(topHolding.name || topHolding.isin || "—")}</strong>
+        <em>${escapeTitoliHtml(formatEuro(topHolding.currentValue))} · ${escapeTitoliHtml(formatPortfolioCompositionPercent(topHolding.weightPct))}</em>
+      </div>
+      <div class="composizione-focus-item">
+        <span>Concentrazione Top 3</span>
+        <strong>${escapeTitoliHtml(formatPortfolioCompositionPercent(summary.concentrationTop3Pct))}</strong>
+      </div>
+      <div class="composizione-focus-item">
+        <span>Concentrazione Top 5</span>
+        <strong>${escapeTitoliHtml(formatPortfolioCompositionPercent(summary.concentrationTop5Pct))}</strong>
+      </div>
+    ` : '<div class="composizione-empty">Nessun titolo valorizzato.</div>';
+  }
+
+  const topRows = summary?.topExposures || [];
+
+  if (!topRows.length) {
+    const empty = document.createElement("div");
+    empty.className = "composizione-empty";
+    empty.textContent = "Nessun titolo valorizzato.";
+    composizioneTopExposuresRoot.appendChild(empty);
+    return;
+  }
+
+  topRows.forEach((row, index) => {
+    const item = document.createElement("div");
+    item.className = "composizione-top-row";
+    item.style.setProperty("--bar-width", `${Math.max(2, Math.min(100, row.weightPct))}%`);
+    item.innerHTML = `
+      <div class="composizione-top-rank">${index + 1}</div>
+      <div class="composizione-top-main">
+        <div class="composizione-top-header">
+          <span>${escapeTitoliHtml(row.name || row.isin || "—")}</span>
+          <strong>${escapeTitoliHtml(formatPortfolioCompositionPercent(row.weightPct))}</strong>
+        </div>
+        <div class="composizione-bar-track"><span></span></div>
+      </div>
+      <div class="composizione-top-value">${escapeTitoliHtml(formatEuro(row.currentValue))}</div>
+    `;
+    composizioneTopExposuresRoot.appendChild(item);
+  });
+}
+
+function renderPortfolioAllocations(allocations) {
+  renderPortfolioAllocation(composizioneAllocationCategory, allocations?.category);
+  renderPortfolioAllocation(composizioneAllocationRisk, allocations?.risk);
+  renderPortfolioAllocation(composizioneAllocationMix, allocations?.mix);
+}
+
+function appendPortfolioCompositionCell(row, content, className = "") {
+  const cell = document.createElement("td");
+  if (className) cell.className = className;
+  if (content instanceof Node) {
+    cell.appendChild(content);
+  } else {
+    cell.textContent = content ?? "—";
+  }
+  row.appendChild(cell);
+}
+
+function appendPortfolioCompositionNameCell(row, item) {
+  const cell = document.createElement("td");
+  const wrapper = document.createElement("div");
+  const name = document.createElement("span");
+
+  cell.className = "composizione-title-cell";
+  wrapper.className = "composizione-title-wrap";
+  name.textContent = item.name || "—";
+  wrapper.appendChild(name);
+
+  if (item.profileMissing) {
+    wrapper.appendChild(createPortfolioCompositionBadge("Profilo mancante", "is-warning"));
+  }
+
+  cell.appendChild(wrapper);
+  row.appendChild(cell);
+}
+
+function createPortfolioCompositionDetailButton(detailRow) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "chart-btn ghost composizione-detail-toggle";
+  button.textContent = "Dettagli";
+  button.setAttribute("aria-expanded", "false");
+  button.addEventListener("click", () => {
+    const isOpen = detailRow.classList.toggle("is-open");
+    button.setAttribute("aria-expanded", isOpen ? "true" : "false");
+    button.textContent = isOpen ? "Chiudi" : "Dettagli";
+  });
+  return button;
+}
+
+function createPortfolioCompositionDetailRow(item, colSpan) {
+  const row = document.createElement("tr");
+  const cell = document.createElement("td");
+  const details = [
+    ["ISIN", item.isin || "—"],
+    ["Tipo strumento", item.instrumentType || "—"],
+    ["Area geografica", item.geography || "—"],
+    ["Settore", item.sector || "—"],
+    ["ESG", item.esg || "N/D"],
+    ["Capitale protetto", item.capitalProtected ? "Sì" : "No"],
+    ["% azionario", formatPortfolioCompositionPercent(item.equityPct)],
+    ["% obbligazionario", formatPortfolioCompositionPercent(item.bondPct)],
+  ];
+
+  row.className = "composizione-detail-row";
+  cell.colSpan = colSpan;
+  cell.innerHTML = `
+    <div class="composizione-detail-grid">
+      ${details.map(([label, value]) => `
+        <div class="composizione-detail-item">
+          <span>${escapeTitoliHtml(label)}</span>
+          <strong>${escapeTitoliHtml(value)}</strong>
+        </div>
+      `).join("")}
+    </div>
+  `;
+  row.appendChild(cell);
+  return row;
+}
+
+function renderPortfolioCompositionTable(rows, summary) {
+  if (!composizioneTableBody) return;
+
+  composizioneTableBody.textContent = "";
+  if (composizioneTableSubtitle) {
+    composizioneTableSubtitle.textContent = summary
+      ? `${summary.assetCount} titoli attivi · ${summary.valuedAssetCount} con ultimo snapshot valido`
+      : "—";
+  }
+
+  if (!rows?.length) {
+    const emptyRow = document.createElement("tr");
+    const emptyCell = document.createElement("td");
+    emptyCell.colSpan = 5;
+    emptyCell.className = "composizione-table-empty";
+    emptyCell.textContent = "Nessun titolo attivo e visibile da mostrare.";
+    emptyRow.appendChild(emptyCell);
+    composizioneTableBody.appendChild(emptyRow);
+    return;
+  }
+
+  const sortedRows = rows.slice().sort((first, second) => {
+    const valueDiff = (Number(second.currentValue) || 0) - (Number(first.currentValue) || 0);
+    if (valueDiff !== 0) return valueDiff;
+    return String(first.name || "").localeCompare(String(second.name || ""), "it");
+  });
+  const topKey = summary?.topHolding
+    ? `${summary.topHolding.dossierId}|${summary.topHolding.isin}`
+    : "";
+
+  sortedRows.forEach((item) => {
+    const row = document.createElement("tr");
+    const weightPct = summary?.totalValue > 0 && Number.isFinite(item.currentValue)
+      ? (item.currentValue / summary.totalValue) * 100
+      : NaN;
+    const rowKey = `${item.dossierId}|${item.isin}`;
+    if (rowKey && rowKey === topKey) row.classList.add("is-main-exposure");
+
+    appendPortfolioCompositionNameCell(row, item);
+    appendPortfolioCompositionCell(row, createPortfolioCompositionBadge(item.category, portfolioCompositionBadgeClass(item.category, "category")));
+    appendPortfolioCompositionCell(row, createPortfolioCompositionBadge(item.riskLabel, portfolioCompositionBadgeClass(item.riskLabel, "risk")));
+    appendPortfolioCompositionCell(row, formatPortfolioCompositionPercent(weightPct), "num composizione-weight-cell");
+    appendPortfolioCompositionCell(row, Number.isFinite(item.currentValue) ? formatEuro(item.currentValue) : "—", "num");
+
+    composizioneTableBody.appendChild(row);
+  });
+}
+
+function renderPortfolioCompositionTechnicalTable(rows, summary) {
+  if (!composizioneTechnicalTableBody) return;
+
+  composizioneTechnicalTableBody.textContent = "";
+  const sortedRows = (rows || []).slice().sort((first, second) => {
+    const valueDiff = (Number(second.currentValue) || 0) - (Number(first.currentValue) || 0);
+    if (valueDiff !== 0) return valueDiff;
+    return String(first.name || "").localeCompare(String(second.name || ""), "it");
+  });
+
+  if (!sortedRows.length) {
+    const row = document.createElement("tr");
+    const cell = document.createElement("td");
+    cell.colSpan = 13;
+    cell.className = "composizione-table-empty";
+    cell.textContent = "Nessun dettaglio tecnico disponibile.";
+    row.appendChild(cell);
+    composizioneTechnicalTableBody.appendChild(row);
+    return;
+  }
+
+  sortedRows.forEach((item) => {
+    const row = document.createElement("tr");
+    const weightPct = summary?.totalValue > 0 && Number.isFinite(item.currentValue)
+      ? (item.currentValue / summary.totalValue) * 100
+      : NaN;
+
+    appendPortfolioCompositionCell(row, item.name || "—");
+    appendPortfolioCompositionCell(row, item.isin || "—");
+    appendPortfolioCompositionCell(row, item.category || "—");
+    appendPortfolioCompositionCell(row, item.instrumentType || "—");
+    appendPortfolioCompositionCell(row, item.riskLabel || "—");
+    appendPortfolioCompositionCell(row, item.geography || "—");
+    appendPortfolioCompositionCell(row, item.sector || "—");
+    appendPortfolioCompositionCell(row, formatPortfolioCompositionPercent(item.equityPct), "num");
+    appendPortfolioCompositionCell(row, formatPortfolioCompositionPercent(item.bondPct), "num");
+    appendPortfolioCompositionCell(row, item.esg || "N/D");
+    appendPortfolioCompositionCell(row, item.capitalProtected ? "Sì" : "No");
+    appendPortfolioCompositionCell(row, formatPortfolioCompositionPercent(weightPct), "num");
+    appendPortfolioCompositionCell(row, Number.isFinite(item.currentValue) ? formatEuro(item.currentValue) : "—", "num");
+
+    composizioneTechnicalTableBody.appendChild(row);
+  });
+}
+
+async function loadPortfolioComposition() {
+  console.log("[Composizione] loadPortfolioCompositionStarted", {
+    loadPortfolioCompositionStarted: true,
+    hasSupabaseClient: Boolean(supabaseClient),
+  });
+
+  if (!supabaseClient) {
+    setPortfolioCompositionState("Credenziali Supabase mancanti.", "error");
+    return;
+  }
+
+  setPortfolioCompositionState("Caricamento composizione...");
+
+  try {
+    const assetsResult = await supabaseClient
+      .from("portfolio_assets")
+      .select("*")
+      .eq("visible", true)
+      .eq("is_closed", false)
+      .order("asset_name", { ascending: true });
+
+    console.log("[Composizione] assetsQueryResult", {
+      assetsQueryResult: {
+        count: assetsResult.data?.length || 0,
+        error: assetsResult.error?.message || null,
+        sample: assetsResult.data?.[0] || null,
+        sampleColumns: Object.keys(assetsResult.data?.[0] || {}),
+      },
+    });
+
+    if (assetsResult.error) {
+      setPortfolioCompositionState(`Errore lettura titoli: ${assetsResult.error.message}`, "error");
+      return;
+    }
+
+    const assets = (assetsResult.data ?? []).filter(isTitoliAssetActive);
+    const activeIsins = Array.from(new Set(assets.map((asset) => normalizeTitoliId(getTitoliAssetIsin(asset))).filter(Boolean)));
+    const profilesResult = activeIsins.length
+      ? await supabaseClient
+        .from("portfolio_asset_profiles")
+        .select("*")
+        .in("isin", activeIsins)
+      : { data: [], error: null };
+
+    console.log("[Composizione] profilesQueryResult", {
+      profilesQueryResult: {
+        count: profilesResult.data?.length || 0,
+        error: profilesResult.error?.message || null,
+        queriedIsins: activeIsins.length,
+        sample: profilesResult.data?.[0] || null,
+        sampleColumns: Object.keys(profilesResult.data?.[0] || {}),
+      },
+    });
+
+    if (profilesResult.error) {
+      setPortfolioCompositionState(`Errore lettura profili: ${profilesResult.error.message}`, "error");
+      return;
+    }
+
+    const snapshotsResult = await fetchPortfolioCompositionSnapshots(assets);
+    console.log("[Composizione] snapshotsQueryResult", {
+      snapshotsQueryResult: {
+        count: snapshotsResult.data?.length || 0,
+        error: snapshotsResult.error?.message || null,
+        meta: snapshotsResult.meta || null,
+        sample: snapshotsResult.data?.[0] || null,
+        sampleColumns: Object.keys(snapshotsResult.data?.[0] || {}),
+      },
+    });
+
+    if (snapshotsResult.error) {
+      setPortfolioCompositionState(`Errore lettura snapshot titoli: ${snapshotsResult.error.message || snapshotsResult.error}`, "error");
+      return;
+    }
+
+    const profiles = profilesResult.data ?? [];
+    const snapshots = snapshotsResult.data ?? [];
+    const rows = normalizePortfolioCompositionRows(assets, profiles, snapshots);
+    const computed = computePortfolioComposition(rows);
+
+    portfolioCompositionState = {
+      rows,
+      summary: computed.summary,
+      allocations: computed.allocations,
+    };
+
+    if (!assets.length) {
+      renderPortfolioCompositionCards(computed.summary);
+      renderPortfolioTopExposures(computed.summary);
+      renderPortfolioAllocations(computed.allocations);
+      renderPortfolioCompositionTable(rows, computed.summary);
+      renderPortfolioCompositionTechnicalTable(rows, computed.summary);
+      setPortfolioCompositionState("Nessun titolo attivo e visibile trovato in portfolio_assets.", "info");
+      return;
+    }
+
+    const assetsWithProfiles = rows.filter((row) => !row.profileMissing).length;
+    const assetsWithoutProfiles = rows.filter((row) => row.profileMissing).length;
+    console.log("[Composizione]", {
+      assetsLoaded: assets.length,
+      profilesLoaded: profiles.length,
+      snapshotsLoaded: snapshots.length,
+      assetsWithProfiles,
+      assetsWithoutProfiles,
+      allocationsComputed: computed.allocations,
+    });
+
+    renderPortfolioCompositionCards(computed.summary);
+    renderPortfolioTopExposures(computed.summary);
+    renderPortfolioAllocations(computed.allocations);
+    renderPortfolioCompositionTable(rows, computed.summary);
+    renderPortfolioCompositionTechnicalTable(rows, computed.summary);
+
+    if (!rows.length) {
+      setPortfolioCompositionState("Nessun titolo attivo e visibile trovato.", "info");
+      return;
+    }
+
+    if (!snapshots.length || computed.summary.valuedAssetCount === 0) {
+      setPortfolioCompositionState(
+        `Trovati ${assets.length} titoli attivi, ma nessuno snapshot valido in portfolio_snapshots per gli ISIN correnti.`,
+        "warning",
+      );
+      return;
+    }
+
+    setPortfolioCompositionState("");
+  } catch (error) {
+    console.error("[Composizione] Errore imprevisto:", error);
+    setPortfolioCompositionState(`Errore caricamento composizione: ${error.message || error}`, "error");
+  }
 }
 
 function sortTitoliDossiers(a, b) {

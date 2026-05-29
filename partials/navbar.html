@@ -12,8 +12,14 @@
     <a class="nav-link" href="patrimonio.html" data-nav-page="patrimonio.html">Patrimonio</a>
     <a class="nav-link" href="movimenti.html" data-nav-page="movimenti.html">Movimenti</a>
     <a class="nav-link" href="dossier.html" data-nav-page="dossier.html">Dossier</a>
-    <a class="nav-link" href="titoli.html" data-nav-page="titoli.html">Titoli</a>
-    <a class="nav-link" href="insert-titoli.html" data-nav-page="insert-titoli.html">Aggiorna titoli</a>
+    <div class="nav-dropdown" data-nav-pages="titoli.html,insert-titoli.html,composizione.html">
+      <button class="nav-link nav-dropdown-toggle" type="button" aria-expanded="false">Titoli</button>
+      <div class="nav-submenu" aria-label="Titoli">
+        <a class="nav-submenu-link" href="titoli.html" data-nav-page="titoli.html">Andamento</a>
+        <a class="nav-submenu-link" href="insert-titoli.html" data-nav-page="insert-titoli.html">Aggiornamento</a>
+        <a class="nav-submenu-link" href="composizione.html" data-nav-page="composizione.html">Composizione</a>
+      </div>
+    </div>
     <div class="nav-dropdown" data-nav-pages="admin-dossiers.html,admin-investments-basis-events.html,admin-portfolio-assets.html,admin-portfolio-basis-events.html">
       <button class="nav-link nav-dropdown-toggle" type="button" aria-expanded="false">Gestione DB</button>
       <div class="nav-submenu" aria-label="Gestione DB">
