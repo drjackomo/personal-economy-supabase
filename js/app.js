@@ -2283,6 +2283,16 @@ async function fetchDashboardPagedRows(table, select, configureQuery, pageSize =
   return rows;
 }
 
+function fetchAllInvestmentsSnapshots() {
+  return fetchDashboardPagedRows(
+    "investments_snapshots",
+    "id,snapshot_date,account_id,value",
+    (query) => query
+      .order("snapshot_date", { ascending: true })
+      .order("id", { ascending: true }),
+  );
+}
+
 function normalizeDashboardWealthDate(value) {
   const dateIso = normalizeDashboardISODate(value);
   return /^\d{4}-\d{2}-\d{2}$/.test(dateIso) ? dateIso : "";
@@ -3424,21 +3434,17 @@ function computeInvestmentsPerformanceSeries(snapshots, basisEvents) {
 }
 
 async function fetchDashboardInvestmentsPerformanceSeries() {
-  const [snapshotsResult, basisResult] = await Promise.all([
-    supabaseClient
-      .from("investments_snapshots")
-      .select("snapshot_date,account_id,value")
-      .order("snapshot_date", { ascending: true }),
+  const [snapshots, basisResult] = await Promise.all([
+    fetchAllInvestmentsSnapshots(),
     supabaseClient
       .from("investments_basis_events")
       .select("effective_date,account_id,cost_basis")
       .order("effective_date", { ascending: true }),
   ]);
 
-  if (snapshotsResult.error) throw snapshotsResult.error;
   if (basisResult.error) throw basisResult.error;
 
-  return computeInvestmentsPerformanceSeries(snapshotsResult.data ?? [], basisResult.data ?? []);
+  return computeInvestmentsPerformanceSeries(snapshots, basisResult.data ?? []);
 }
 
 function getInvestmentsBounds(points) {
@@ -9813,13 +9819,11 @@ async function fetchDossierBaseData() {
   }
 
   try {
-    const [dossiersResult, snapshotsResult, basisEventsResult, assetsResult, profiles] = await Promise.all([
+    const [dossiersResult, snapshots, basisEventsResult, assetsResult, profiles] = await Promise.all([
       supabaseClient
         .from("dossiers")
         .select("account_id,label,is_closed,order,visible"),
-      supabaseClient
-        .from("investments_snapshots")
-        .select("snapshot_date,account_id,value"),
+      fetchAllInvestmentsSnapshots(),
       supabaseClient
         .from("investments_basis_events")
         .select("effective_date,account_id,cost_basis"),
@@ -9833,10 +9837,6 @@ async function fetchDossierBaseData() {
       console.error("[Dossier] Errore lettura dossiers:", dossiersResult.error);
     }
 
-    if (snapshotsResult.error) {
-      console.error("[Dossier] Errore lettura investments_snapshots:", snapshotsResult.error);
-    }
-
     if (basisEventsResult.error) {
       console.error("[Dossier] Errore lettura investments_basis_events:", basisEventsResult.error);
     }
@@ -9845,18 +9845,18 @@ async function fetchDossierBaseData() {
       console.error("[Dossier] Errore lettura portfolio_assets:", assetsResult.error);
     }
 
-    if (dossiersResult.error || snapshotsResult.error || basisEventsResult.error) {
+    if (dossiersResult.error || basisEventsResult.error) {
       return;
     }
 
     dossierPageState = {
       dossiers: dossiersResult.data ?? [],
-      snapshots: snapshotsResult.data ?? [],
+      snapshots,
       basisEvents: basisEventsResult.data ?? [],
     };
 
     console.log("[Dossier] dossiers:", dossiersResult.data ?? []);
-    console.log("[Dossier] snapshots:", snapshotsResult.data ?? []);
+    console.log("[Dossier] snapshots:", snapshots);
     console.log("[Dossier] basis events:", basisEventsResult.data ?? []);
     logAssetProfilesDebug("dossier.html", assetsResult.error ? [] : assetsResult.data ?? [], profiles);
     populateDossierControls();
