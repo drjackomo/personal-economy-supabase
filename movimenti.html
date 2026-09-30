@@ -6,10 +6,10 @@
     <meta name="robots" content="noindex, nofollow, noarchive, nosnippet">
     <title>Movimenti - Personal Economy</title>
     <link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
-    <link rel="stylesheet" href="css/styles.css">
+    <link rel="stylesheet" href="css/styles.css?v=20260925-yearly-detail-3">
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="https://unpkg.com/feather-icons"></script>
-    <script src="js/app.js" defer></script>
+    <script src="js/app.js?v=20260925-yearly-detail-3" defer></script>
   </head>
   <body>
     <div id="navbar-root"></div>
@@ -29,13 +29,19 @@
 
           <article class="summary-card summary-card-year-flow">
             <h2>Anno</h2>
-            <div class="summary-row">
+            <div id="open-yearly-income-detail" class="summary-row summary-row-action" role="button" tabindex="0">
               <span>Entrate</span>
-              <strong id="yearly-income" class="summary-income">€ 0,00</strong>
+              <span class="summary-row-value">
+                <strong id="yearly-income" class="summary-income">€ 0,00</strong>
+                <span class="summary-row-chevron" aria-hidden="true">›</span>
+              </span>
             </div>
-            <div class="summary-row">
+            <div id="open-yearly-expense-detail" class="summary-row summary-row-action" role="button" tabindex="0">
               <span>Uscite</span>
-              <strong id="yearly-expense" class="summary-expense">€ 0,00</strong>
+              <span class="summary-row-value">
+                <strong id="yearly-expense" class="summary-expense">€ 0,00</strong>
+                <span class="summary-row-chevron" aria-hidden="true">›</span>
+              </span>
             </div>
           </article>
 
@@ -108,6 +114,33 @@
         </section>
       </div>
     </main>
+
+    <div id="yearly-detail-modal" class="modal-overlay" aria-hidden="true">
+      <div class="modal-card yearly-detail-modal-card" role="dialog" aria-modal="true" aria-labelledby="yearly-detail-modal-title">
+        <div class="modal-header">
+          <div>
+            <h2 id="yearly-detail-modal-title">Entrate</h2>
+            <p>Movimenti inclusi nel consuntivo annuale</p>
+          </div>
+          <button id="close-yearly-detail-modal" class="modal-close" type="button" aria-label="Chiudi">×</button>
+        </div>
+
+        <div id="yearly-detail-total" class="yearly-detail-total"></div>
+        <div class="yearly-detail-filter" aria-label="Filtro per importo">
+          <select id="yearly-detail-filter-operator" aria-label="Tipo di confronto">
+            <option value="greater">Maggiore di</option>
+            <option value="less">Minore di</option>
+          </select>
+          <label class="yearly-detail-filter-amount">
+            <span>€</span>
+            <input id="yearly-detail-filter-value" type="number" min="0" step="0.01" inputmode="decimal" placeholder="Importo" aria-label="Importo del filtro">
+          </label>
+          <button id="yearly-detail-filter-reset" class="yearly-detail-filter-reset" type="button">Azzera filtro</button>
+        </div>
+        <div id="yearly-detail-filter-summary" class="yearly-detail-filter-summary" aria-live="polite"></div>
+        <div id="yearly-detail-content" class="yearly-detail-content"></div>
+      </div>
+    </div>
 
     <div id="movement-modal" class="modal-overlay" aria-hidden="true">
       <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="movement-modal-title">

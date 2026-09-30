@@ -17,6 +17,17 @@ const movimentiNextMonthButton = document.getElementById("movimenti-next-month")
 const yearlyTotalElement = document.getElementById("yearly-total");
 const yearlyIncomeElement = document.getElementById("yearly-income");
 const yearlyExpenseElement = document.getElementById("yearly-expense");
+const openYearlyIncomeDetailButton = document.getElementById("open-yearly-income-detail");
+const openYearlyExpenseDetailButton = document.getElementById("open-yearly-expense-detail");
+const yearlyDetailModal = document.getElementById("yearly-detail-modal");
+const yearlyDetailModalTitle = document.getElementById("yearly-detail-modal-title");
+const yearlyDetailTotal = document.getElementById("yearly-detail-total");
+const yearlyDetailContent = document.getElementById("yearly-detail-content");
+const closeYearlyDetailModalButton = document.getElementById("close-yearly-detail-modal");
+const yearlyDetailFilterOperator = document.getElementById("yearly-detail-filter-operator");
+const yearlyDetailFilterValue = document.getElementById("yearly-detail-filter-value");
+const yearlyDetailFilterReset = document.getElementById("yearly-detail-filter-reset");
+const yearlyDetailFilterSummary = document.getElementById("yearly-detail-filter-summary");
 const monthlyTotalElement = document.getElementById("monthly-total");
 const monthlyIncomeElement = document.getElementById("monthly-income");
 const monthlyExpenseElement = document.getElementById("monthly-expense");
@@ -244,6 +255,10 @@ let movementCurrentBalance = 0;
 let modalMode = "create";
 let editingTxId = null;
 let pendingDeleteTxId = null;
+let yearlySummaryTransactions = [];
+let yearlySummaryYear = null;
+let yearlyDetailTransactions = [];
+let yearlyDetailType = "income";
 let titoliSelectedDate = new Date();
 let titoliState = {
   mode: "month",
@@ -849,6 +864,21 @@ async function initAuthenticatedApp(user) {
       deleteMovementModalError
     ) {
       initDeleteMovementModal();
+    }
+    if (
+      yearlyDetailModal &&
+      yearlyDetailModalTitle &&
+      yearlyDetailTotal &&
+      yearlyDetailContent &&
+      closeYearlyDetailModalButton &&
+      yearlyDetailFilterOperator &&
+      yearlyDetailFilterValue &&
+      yearlyDetailFilterReset &&
+      yearlyDetailFilterSummary &&
+      openYearlyIncomeDetailButton &&
+      openYearlyExpenseDetailButton
+    ) {
+      initYearlyDetailModal();
     }
     applyMovimentiFilterButton.addEventListener("click", loadMovimenti);
     loadMovimenti();
@@ -4145,6 +4175,10 @@ function setSummaryValues(values) {
 }
 
 function setSummaryLoading() {
+  yearlySummaryTransactions = [];
+  yearlySummaryYear = null;
+  if (openYearlyIncomeDetailButton) openYearlyIncomeDetailButton.setAttribute("aria-disabled", "true");
+  if (openYearlyExpenseDetailButton) openYearlyExpenseDetailButton.setAttribute("aria-disabled", "true");
   setSummaryValues({
     yearlyTotal: "Carico...",
     yearlyIncome: "Carico...",
@@ -4167,6 +4201,7 @@ function setSummaryError() {
 }
 
 async function loadMovimentiSummaries() {
+  const summaryYear = Number(movimentiYearSelect.value);
   const yearRange = getMovimentiYearRange();
   const monthRange = getMovimentiDateRange();
 
@@ -4176,7 +4211,7 @@ async function loadMovimentiSummaries() {
     const [yearResult, monthResult] = await Promise.all([
       supabaseClient
         .from("transactions")
-        .select("amount")
+        .select("date,description,amount")
         .eq("in_totals", true)
         .gte("date", yearRange.startDate)
         .lt("date", yearRange.endDateExclusive),
@@ -4193,10 +4228,14 @@ async function loadMovimentiSummaries() {
       yearlyIncomeElement.textContent = "Errore";
       yearlyExpenseElement.textContent = "Errore";
     } else {
-      const yearlySummary = calculateSummary(yearResult.data ?? []);
+      yearlySummaryTransactions = yearResult.data ?? [];
+      yearlySummaryYear = summaryYear;
+      const yearlySummary = calculateSummary(yearlySummaryTransactions);
       setSummaryAmount(yearlyTotalElement, yearlySummary.total);
       setSummaryAmount(yearlyIncomeElement, yearlySummary.income);
       setSummaryAmount(yearlyExpenseElement, yearlySummary.expense);
+      if (openYearlyIncomeDetailButton) openYearlyIncomeDetailButton.setAttribute("aria-disabled", "false");
+      if (openYearlyExpenseDetailButton) openYearlyExpenseDetailButton.setAttribute("aria-disabled", "false");
     }
 
     if (monthResult.error) {
@@ -4212,6 +4251,134 @@ async function loadMovimentiSummaries() {
   } catch (error) {
     setSummaryError();
   }
+}
+
+function closeYearlyDetailModal() {
+  yearlyDetailModal.classList.remove("is-open");
+  yearlyDetailModal.setAttribute("aria-hidden", "true");
+}
+
+function renderYearlyDetailTransactions() {
+  const valueClass = yearlyDetailType === "income" ? "amount-positive" : "amount-negative";
+  const filterValue = Math.abs(Number(yearlyDetailFilterValue.value));
+  const hasActiveFilter = yearlyDetailFilterValue.value !== "" && Number.isFinite(filterValue);
+  const transactions = hasActiveFilter
+    ? yearlyDetailTransactions.filter((transaction) => {
+        const absoluteAmount = Math.abs(Number(transaction.amount));
+        return yearlyDetailFilterOperator.value === "greater"
+          ? absoluteAmount > filterValue
+          : absoluteAmount < filterValue;
+      })
+    : yearlyDetailTransactions;
+
+  yearlyDetailContent.textContent = "";
+  yearlyDetailFilterSummary.textContent = "";
+  yearlyDetailFilterSummary.classList.toggle("is-visible", hasActiveFilter);
+
+  if (hasActiveFilter) {
+    const filteredTotal = transactions.reduce((total, transaction) => total + Number(transaction.amount), 0);
+    const movementLabel = transactions.length === 1 ? "movimento" : "movimenti";
+    yearlyDetailFilterSummary.textContent = `${transactions.length} ${movementLabel} · Totale filtrato: ${formatEuro(filteredTotal)}`;
+  }
+
+  if (!transactions.length) {
+    const emptyState = document.createElement("div");
+    emptyState.className = "empty-state yearly-detail-empty";
+    emptyState.textContent = hasActiveFilter
+      ? "Nessun movimento corrisponde al filtro."
+      : "Nessun movimento incluso nel totale.";
+    yearlyDetailContent.appendChild(emptyState);
+  } else {
+    const table = document.createElement("table");
+    const thead = document.createElement("thead");
+    const tbody = document.createElement("tbody");
+    const headerRow = document.createElement("tr");
+
+    ["Data", "Descrizione", "Importo"].forEach((column) => {
+      const th = document.createElement("th");
+      th.textContent = column;
+      headerRow.appendChild(th);
+    });
+    thead.appendChild(headerRow);
+
+    transactions.forEach((transaction) => {
+      const row = document.createElement("tr");
+      const dateCell = document.createElement("td");
+      const descriptionCell = document.createElement("td");
+      const amountCell = document.createElement("td");
+      dateCell.textContent = formatDate(transaction.date);
+      descriptionCell.textContent = transaction.description ?? "-";
+      amountCell.textContent = formatEuro(transaction.amount);
+      descriptionCell.className = "yearly-detail-description";
+      amountCell.className = `yearly-detail-amount ${valueClass}`;
+      row.append(dateCell, descriptionCell, amountCell);
+      tbody.appendChild(row);
+    });
+
+    table.className = "transactions-table yearly-detail-table";
+    table.append(thead, tbody);
+    yearlyDetailContent.appendChild(table);
+  }
+}
+
+function openYearlyDetailModal(type) {
+  const selectedYear = yearlySummaryYear;
+  if (!Number.isFinite(selectedYear)) return;
+
+  const isIncome = type === "income";
+  const label = isIncome ? "Entrate" : "Uscite";
+  const valueClass = isIncome ? "amount-positive" : "amount-negative";
+  const summary = calculateSummary(yearlySummaryTransactions);
+  const total = isIncome ? summary.income : summary.expense;
+
+  yearlyDetailType = type;
+  yearlyDetailTransactions = yearlySummaryTransactions
+    .filter((transaction) => {
+      const amount = Number(transaction.amount);
+      return Number.isFinite(amount) && (isIncome ? amount > 0 : amount < 0);
+    })
+    .sort((first, second) => String(second.date).localeCompare(String(first.date)));
+  yearlyDetailFilterOperator.value = "greater";
+  yearlyDetailFilterValue.value = "";
+  yearlyDetailModalTitle.textContent = `${label} ${selectedYear}`;
+  yearlyDetailTotal.className = `yearly-detail-total ${valueClass}`;
+  yearlyDetailTotal.textContent = `${label} ${selectedYear}: ${formatEuro(total)}`;
+  renderYearlyDetailTransactions();
+
+  yearlyDetailModal.classList.add("is-open");
+  yearlyDetailModal.setAttribute("aria-hidden", "false");
+  closeYearlyDetailModalButton.focus();
+}
+
+function initYearlyDetailModal() {
+  const bindDetailTrigger = (element, type) => {
+    element.addEventListener("click", () => openYearlyDetailModal(type));
+    element.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        openYearlyDetailModal(type);
+      }
+    });
+  };
+
+  bindDetailTrigger(openYearlyIncomeDetailButton, "income");
+  bindDetailTrigger(openYearlyExpenseDetailButton, "expense");
+  yearlyDetailFilterOperator.addEventListener("change", renderYearlyDetailTransactions);
+  yearlyDetailFilterValue.addEventListener("input", renderYearlyDetailTransactions);
+  yearlyDetailFilterReset.addEventListener("click", () => {
+    yearlyDetailFilterValue.value = "";
+    renderYearlyDetailTransactions();
+    yearlyDetailFilterValue.focus();
+  });
+  closeYearlyDetailModalButton.addEventListener("click", closeYearlyDetailModal);
+  yearlyDetailModal.addEventListener("click", (event) => {
+    if (event.target === yearlyDetailModal) closeYearlyDetailModal();
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && yearlyDetailModal.classList.contains("is-open")) {
+      closeYearlyDetailModal();
+    }
+  });
 }
 
 function initMovimentiFilters() {

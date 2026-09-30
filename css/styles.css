@@ -2814,6 +2814,39 @@ button:disabled {
   font-size: 15px;
 }
 
+.summary-row-action {
+  cursor: pointer;
+  transition: background 150ms ease;
+}
+
+.summary-row-action:hover,
+.summary-row-action:focus-visible {
+  background: rgba(15, 23, 42, 0.025);
+}
+
+.summary-row-action:focus-visible {
+  outline: 2px solid rgba(37, 99, 235, 0.45);
+  outline-offset: 2px;
+}
+
+.summary-row-action[aria-disabled="true"] {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.summary-row-value {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.summary-row-chevron {
+  color: #94a3b8;
+  font-size: 19px;
+  font-weight: 400;
+  line-height: 1;
+}
+
 .summary-income {
   color: #16a34a;
 }
@@ -3618,6 +3651,143 @@ td.in-totals-column {
 
 .update-month-modal-card {
   width: min(520px, 100%);
+}
+
+.yearly-detail-modal-card {
+  display: flex;
+  flex-direction: column;
+  width: min(780px, 100%);
+  max-height: min(82vh, 760px);
+}
+
+.yearly-detail-total {
+  border-radius: 14px;
+  background: #f8fafc;
+  margin-bottom: 16px;
+  padding: 14px 16px;
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.yearly-detail-filter {
+  display: grid;
+  grid-template-columns: auto minmax(130px, 180px) auto;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.yearly-detail-filter select,
+.yearly-detail-filter input {
+  min-height: 38px;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 10px;
+  background: #ffffff;
+  color: #0f172a;
+  font-size: 14px;
+  padding: 8px 10px;
+}
+
+.yearly-detail-filter-amount {
+  position: relative;
+}
+
+.yearly-detail-filter-amount span {
+  position: absolute;
+  top: 50%;
+  left: 10px;
+  color: #64748b;
+  transform: translateY(-50%);
+}
+
+.yearly-detail-filter-amount input {
+  width: 100%;
+  padding-left: 26px;
+}
+
+.yearly-detail-filter-reset {
+  justify-self: start;
+  min-height: 38px;
+  background: transparent;
+  color: #475569;
+  font-size: 13px;
+  padding: 7px 9px;
+}
+
+.yearly-detail-filter-reset:hover {
+  background: #f1f5f9;
+}
+
+.yearly-detail-filter-summary {
+  display: none;
+  margin: 0 0 10px;
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.yearly-detail-filter-summary.is-visible {
+  display: block;
+}
+
+.yearly-detail-content {
+  min-height: 0;
+  overflow: auto;
+  border: 1px solid rgba(226, 232, 240, 0.88);
+  border-radius: 14px;
+}
+
+.yearly-detail-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.yearly-detail-table th:last-child,
+.yearly-detail-amount {
+  text-align: right;
+}
+
+.yearly-detail-description {
+  width: 100%;
+  white-space: normal !important;
+}
+
+.yearly-detail-amount {
+  font-weight: 700;
+}
+
+.yearly-detail-empty {
+  min-height: 150px;
+}
+
+@media (max-width: 600px) {
+  .modal-overlay {
+    padding: 12px;
+  }
+
+  .yearly-detail-modal-card {
+    max-height: 88vh;
+    padding: 18px;
+  }
+
+  .yearly-detail-total {
+    font-size: 18px;
+  }
+
+  .yearly-detail-filter {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .yearly-detail-filter-reset {
+    grid-column: 1 / -1;
+    padding: 4px 0;
+  }
+
+  .yearly-detail-table th,
+  .yearly-detail-table td {
+    padding: 11px 10px;
+  }
 }
 
 .movimenti-page-message {
