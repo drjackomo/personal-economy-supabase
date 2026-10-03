@@ -44,6 +44,29 @@ const saveMovementPlaceholderButton = document.getElementById("save-movement-pla
 const movementDateInput = document.getElementById("movement-date");
 const movementDescriptionInput = document.getElementById("movement-description");
 const movementAmountInput = document.getElementById("movement-amount");
+const tagsPageRoot = document.getElementById("tags-page");
+const movementTagsRoot = document.getElementById("movement-tags");
+const movementTagChips = document.getElementById("movement-tag-chips");
+const movementTagsToggle = document.getElementById("movement-tags-toggle");
+const movementTagsPanel = document.getElementById("movement-tags-list-panel");
+const movementTagsSearch = document.getElementById("movement-tags-search");
+const movementTagsList = document.getElementById("movement-tags-list");
+const movementTagsStatus = document.getElementById("movement-tags-status");
+const movementTagColors = [
+  ["Blu", "#2563eb"], ["Verde", "#15803d"], ["Viola", "#7c3aed"],
+  ["Arancio", "#c2410c"], ["Rosa", "#be185d"], ["Grigio", "#64748b"],
+  ["Ciano", "#0891b2"], ["Turchese", "#0f766e"], ["Lime", "#65a30d"],
+  ["Ocra", "#a16207"], ["Rosso", "#dc2626"], ["Indaco", "#4338ca"],
+];
+let movementTagsCatalog = [];
+let movementSelectedTagIds = new Set();
+let movementTagsSession = 0;
+let movementOriginalTagIds = new Set();
+let movementTransactionId = null;
+let movementTagsReady = false;
+let movementSaving = false;
+let movementEditRequest = 0;
+
 const movementTypeSwitch = document.getElementById("tipoSwitch");
 const movementInTotalsSwitch = document.getElementById("consuntivoSwitch");
 const currentBalancePreview = document.getElementById("current-balance-preview");
@@ -251,7 +274,11 @@ const hasCredentials =
   SUPABASE_URL !== "INSERISCI_QUI_SUPABASE_URL" &&
   SUPABASE_ANON_KEY !== "INSERISCI_QUI_SUPABASE_ANON_KEY";
 
-let movementCurrentBalance = 0;
+let movementCurrentBalance = null;
+let movementAccountId = "FINECO_MAIN";
+let movementCreateTxId = null;
+let movementCheckpointsPromise = null;
+let movementCheckpointsMonth = null;
 let modalMode = "create";
 let editingTxId = null;
 let pendingDeleteTxId = null;
@@ -469,7 +496,7 @@ async function loadNavbar() {
   if (!navbarRoot) return;
 
   try {
-    const response = await fetch("partials/navbar.html");
+    const response = await fetch("partials/navbar.html?v=20261003-search-integrated-cleanup-1", { cache: "no-cache" });
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}`);
     }
@@ -577,6 +604,8 @@ async function signOut() {
   }
 
   authenticatedAppInitialized = false;
+  movementCheckpointsPromise = null;
+  movementCheckpointsMonth = null;
   renderAuthGate();
 }
 
@@ -720,6 +749,7 @@ async function initAuthenticatedApp(user) {
   authenticatedAppInitialized = true;
 
   await loadNavbar();
+  if (tagsPageRoot) initTagsPage();
   addAuthLogoutToNavbar(user);
 
   if (loadButton && statusElement && outputElement) {
@@ -806,6 +836,7 @@ async function initAuthenticatedApp(user) {
 
   if (movimentiTableElement && movimentiMonthSelect && movimentiYearSelect && applyMovimentiFilterButton) {
     initMovimentiFilters();
+    initMovimentiFilterPanel();
     initMovimentiMonthNavigation();
     if (
       movementModal &&
@@ -1060,15 +1091,18 @@ function renderDashboardValues({ cc, portfolio, revolut }) {
 }
 
 async function fetchDashboardCurrentAccount() {
-  const { data, error } = await supabaseClient
-    .from("transactions")
-    .select("date,created_at,balance")
-    .order("date", { ascending: false })
-    .order("created_at", { ascending: false })
-    .limit(1);
-
-  if (error) throw error;
-  return data?.[0] ?? null;
+  const [balance, latest] = await Promise.all([
+    getCurrentFinecoBalance(),
+    supabaseClient.from("transactions")
+      .select("date,created_at,id")
+      .eq("account_id", "FINECO_MAIN")
+      .order("date", { ascending: false })
+      .order("created_at", { ascending: false })
+      .order("id", { ascending: false })
+      .limit(1),
+  ]);
+  if (latest.error) throw latest.error;
+  return { ...(latest.data?.[0] ?? {}), balance };
 }
 
 async function fetchDashboardPortfolio() {
@@ -2535,12 +2569,14 @@ async function fetchDashboardWealthSeries() {
     ),
     fetchDashboardPagedRows(
       "transactions",
-      "date,created_at,balance",
+      "id,date,created_at,balance",
       (query) => query
+        .eq("account_id", "FINECO_MAIN")
         .gte("date", "2026-01-01")
         .not("balance", "is", null)
         .order("date", { ascending: true })
-        .order("created_at", { ascending: true }),
+        .order("created_at", { ascending: true })
+        .order("id", { ascending: true }),
     ),
     fetchDashboardPagedRows(
       "portfolio_snapshots",
@@ -4070,6 +4106,23 @@ function renderMovimentiTable(transactions) {
       }
 
       td.textContent = cell;
+      if (index === 1) {
+        const tags = (transaction.tags || (transaction.transaction_tags || []).map((association) => association.tags)).filter(Boolean);
+        if (tags.length) {
+          const chips = document.createElement("div");
+          chips.className = "movement-tag-chips movement-table-tags";
+          tags.sort((a, b) => a.name.localeCompare(b.name, "it")).forEach((tag) => {
+            const chip = document.createElement("span");
+            chip.className = "movement-tag-chip";
+            const name = document.createElement("span");
+            name.textContent = tag.name;
+            styleMovementTagChip(chip, tag);
+            chip.append(name);
+            chips.appendChild(chip);
+          });
+          td.appendChild(chips);
+        }
+      }
       row.appendChild(td);
     });
 
@@ -4400,6 +4453,48 @@ function initMovimentiFilters() {
   movimentiYearSelect.value = String(currentYear);
 }
 
+function initMovimentiFilterPanel() {
+  const form = document.getElementById("movimenti-search-form");
+  if (!form) return;
+  const element = (suffix) => document.getElementById(`movimenti-search-tags-${suffix}`);
+  const selector = {
+    chips: document.getElementById("movimenti-search-tag-chips"),
+    list: element("list"), search: element("query"), catalog: [],
+    selectedIds: new Set(), emptyLabel: "Seleziona Tag",
+  };
+  initMovimentiSearchControls(form, selector);
+  const toggle = element("toggle");
+  const panel = element("panel");
+  const status = element("status");
+  const retry = element("retry");
+  const loadCatalog = async () => {
+    toggle.disabled = true;
+    retry.hidden = true;
+    status.classList.remove("is-error");
+    status.textContent = "Caricamento Tag...";
+    try {
+      selector.catalog = await fetchTagsCatalog();
+      renderMovementTagSelector(selector);
+      status.textContent = "";
+      toggle.disabled = false;
+    } catch (error) {
+      status.textContent = `Errore caricamento Tag: ${error.message || error}`;
+      status.classList.add("is-error");
+      retry.hidden = false;
+    }
+  };
+  toggle.addEventListener("click", () => {
+    setMovementTagPanel(panel, toggle, panel.hidden);
+    if (!panel.hidden) selector.search.focus();
+  });
+  selector.search.addEventListener("input", () => renderMovementTagSelector(selector));
+  retry.addEventListener("click", loadCatalog);
+  document.addEventListener("click", (event) => {
+    if (!toggle.contains(event.target) && !panel.contains(event.target)) setMovementTagPanel(panel, toggle, false);
+  });
+  loadCatalog();
+}
+
 function ensureMovimentiYearOption(year) {
   const yearValue = String(year);
   if (Array.from(movimentiYearSelect.options).some((option) => option.value === yearValue)) return;
@@ -4433,10 +4528,474 @@ function initMovimentiMonthNavigation() {
   movimentiNextMonthButton?.addEventListener("click", () => changeMovimentiMonth(1));
 }
 
+function setMovementTagsStatus(message, isError = false) {
+  movementTagsStatus.textContent = message;
+  movementTagsStatus.classList.toggle("is-error", isError);
+}
+
+function setMovementTagPanel(panel, button, open) {
+  panel.hidden = !open;
+  button.setAttribute("aria-expanded", String(open));
+}
+
+function getMovementTagColor(tag) {
+  return /^#[0-9a-f]{6}$/i.test(tag.color || "") ? tag.color : "#64748b";
+}
+
+function styleMovementTagChip(chip, tag) {
+  const color = getMovementTagColor(tag);
+  const channels = color.slice(1).match(/.{2}/g).map((hex) => {
+    const value = parseInt(hex, 16) / 255;
+    return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+  });
+  const luminance = channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722;
+  const whiteContrast = 1.05 / (luminance + 0.05);
+  const blackContrast = (luminance + 0.05) / 0.05;
+  chip.style.backgroundColor = color;
+  chip.style.borderColor = color;
+  chip.style.color = whiteContrast >= blackContrast ? "#ffffff" : "#000000";
+}
+
+function createMovementTagDot(tag) {
+  const dot = document.createElement("span");
+  dot.className = "movement-tag-dot";
+  dot.style.backgroundColor = getMovementTagColor(tag);
+  dot.setAttribute("aria-hidden", "true");
+  return dot;
+}
+
+function renderMovementTagSelector(selector) {
+  const { chips, list, search, catalog, selectedIds } = selector;
+  chips.replaceChildren();
+  list.replaceChildren();
+  const query = search.value.trim().toLocaleLowerCase("it");
+  catalog.forEach((tag) => {
+    const id = String(tag.id);
+    if (selectedIds.has(id)) {
+      const chip = document.createElement("span");
+      chip.className = "movement-tag-chip";
+      const name = document.createElement("span");
+      name.textContent = tag.name;
+      styleMovementTagChip(chip, tag);
+      chip.append(name);
+      chips.appendChild(chip);
+    }
+    if (!tag.name.toLocaleLowerCase("it").includes(query)) return;
+    const label = document.createElement("label");
+    label.className = "movement-tag-option";
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.checked = selectedIds.has(id);
+    checkbox.addEventListener("change", () => {
+      if (checkbox.checked) selectedIds.add(id);
+      else selectedIds.delete(id);
+      renderMovementTagSelector(selector);
+      const index = [...list.children].findIndex((item) => item.dataset.tagId === id);
+      list.children[index]?.querySelector("input")?.focus();
+    });
+    const name = document.createElement("span");
+    name.textContent = tag.name;
+    label.dataset.tagId = id;
+    label.append(checkbox, createMovementTagDot(tag), name);
+    list.appendChild(label);
+  });
+  if (selector.emptyLabel && !chips.children.length) chips.textContent = selector.emptyLabel;
+  if (!list.children.length) {
+    list.textContent = query ? "Nessun Tag corrisponde alla ricerca." : "Nessun Tag disponibile.";
+  }
+}
+
+function renderMovementTags() {
+  renderMovementTagSelector({
+    chips: movementTagChips, list: movementTagsList, search: movementTagsSearch,
+    catalog: movementTagsCatalog, selectedIds: movementSelectedTagIds,
+  });
+}
+
+async function loadMovementTags(transactionId = null) {
+  if (!movementTagsRoot) return;
+  const session = ++movementTagsSession;
+  movementSelectedTagIds = new Set();
+  movementOriginalTagIds = new Set();
+  movementTransactionId = transactionId;
+  movementTagsReady = false;
+  saveMovementPlaceholderButton.disabled = true;
+  movementTagsCatalog = [];
+  movementTagsSearch.value = "";
+  setMovementTagPanel(movementTagsPanel, movementTagsToggle, false);
+  renderMovementTags();
+  movementTagsToggle.disabled = true;
+  setMovementTagsStatus("Caricamento Tag...");
+  try {
+    if (!supabaseClient) throw new Error("Credenziali Supabase mancanti.");
+    const [catalog, associations] = await Promise.all([
+      fetchTagsCatalog(),
+      transactionId === null ? Promise.resolve([]) : fetchMovementTagIds(transactionId),
+    ]);
+    if (session !== movementTagsSession) return;
+    movementTagsCatalog = catalog;
+    movementOriginalTagIds = new Set(associations.map(String));
+    movementSelectedTagIds = new Set(movementOriginalTagIds);
+    movementTagsReady = true;
+    renderMovementTags();
+    setMovementTagsStatus("");
+  } catch (error) {
+    if (session !== movementTagsSession) return;
+    setMovementTagsStatus(`Errore caricamento Tag: ${error.message}. Riapri la modale per riprovare.`, true);
+  } finally {
+    if (session === movementTagsSession) {
+      movementTagsToggle.disabled = !movementTagsReady;
+      saveMovementPlaceholderButton.disabled = !movementTagsReady;
+    }
+  }
+}
+
+async function fetchMovementTagIds(transactionId) {
+  const rows = [];
+  for (let offset = 0; ; offset += 500) {
+    const { data, error } = await supabaseClient.from("transaction_tags")
+      .select("tag_id").eq("transaction_id", transactionId).order("tag_id").range(offset, offset + 499);
+    if (error) throw error;
+    rows.push(...(data || []).map((row) => row.tag_id));
+    if (!data || data.length < 500) return rows;
+  }
+}
+
+function setMovementSubmitting(submitting) {
+  movementSaving = submitting;
+  movementModal.querySelectorAll("input, button").forEach((element) => element.disabled = submitting);
+  saveMovementPlaceholderButton.disabled = submitting || !movementTagsReady;
+  movementTagsToggle.disabled = submitting || !movementTagsReady;
+}
+
+function initMovementTags() {
+  if (!movementTagsRoot) return;
+  movementTagsToggle.addEventListener("click", () => {
+    setMovementTagPanel(movementTagsPanel, movementTagsToggle, movementTagsPanel.hidden);
+    if (!movementTagsPanel.hidden) movementTagsSearch.focus();
+  });
+  movementTagsSearch.addEventListener("input", renderMovementTags);
+  movementTagsRoot.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" && event.target === movementTagsSearch) event.preventDefault();
+  });
+  document.addEventListener("click", (event) => {
+    if (!movementTagsRoot.contains(event.target)) setMovementTagPanel(movementTagsPanel, movementTagsToggle, false);
+  });
+}
+
+async function fetchTagsCatalog() {
+  const catalog = [];
+  const pageSize = 500;
+  for (let offset = 0; ; offset += pageSize) {
+    const { data, error } = await supabaseClient.from("tags").select("id,name,color")
+      .order("name").order("id").range(offset, offset + pageSize - 1);
+    if (error) throw error;
+    catalog.push(...(data || []));
+    if (!data || data.length < pageSize) return catalog;
+  }
+}
+
+function initTagsPage() {
+  const list = document.getElementById("tags-list");
+  const form = document.getElementById("tag-form");
+  const nameInput = document.getElementById("tag-name");
+  const palette = document.getElementById("tag-palette");
+  const colorField = document.getElementById("tag-color-field");
+  const title = document.getElementById("tag-form-title");
+  const saveButton = document.getElementById("tag-save");
+  const cancelButton = document.getElementById("tag-cancel");
+  const status = document.getElementById("tags-page-status");
+  const retryButton = document.getElementById("tags-retry");
+  const deleteModal = document.getElementById("delete-tag-modal");
+  const deleteQuestion = document.getElementById("delete-tag-question");
+  const deleteError = document.getElementById("delete-tag-error");
+  const deleteConfirm = document.getElementById("confirm-delete-tag");
+  const deleteCancel = document.getElementById("cancel-delete-tag");
+  const deleteClose = document.getElementById("close-delete-tag");
+  const editModal = document.getElementById("edit-tag-modal");
+  const editForm = document.getElementById("edit-tag-form");
+  const editName = document.getElementById("edit-tag-name");
+  const editPalette = document.getElementById("edit-tag-palette");
+  const editError = document.getElementById("edit-tag-error");
+  const editSave = document.getElementById("save-edit-tag");
+  const editCancel = document.getElementById("cancel-edit-tag");
+  const editClose = document.getElementById("close-edit-tag");
+  let editColor = null;
+  let editTrigger = null;
+  let pendingDeleteTag = null;
+  let deleteTrigger = null;
+  let deleting = false;
+  let catalog = [];
+  let editingId = null;
+  let color = movementTagColors[0][1];
+  let saving = false;
+  let refreshing = false;
+  const showStatus = (message, isError = false) => {
+    status.textContent = message;
+    status.classList.toggle("is-error", isError);
+  };
+  const resetForm = () => {
+    editingId = null;
+    nameInput.value = "";
+    color = movementTagColors[0][1];
+    title.textContent = "Nuovo Tag";
+    saveButton.textContent = "Crea Tag";
+    colorField.hidden = false;
+    cancelButton.hidden = true;
+    [...palette.children].forEach((button, index) => button.setAttribute("aria-pressed", String(index === 0)));
+  };
+  function renderTagPalette(container, selectedColor, onSelect) {
+    container.replaceChildren();
+    const colors = [...movementTagColors];
+    if (selectedColor && !colors.some(([, value]) => value.toLowerCase() === selectedColor.toLowerCase())) {
+      colors.push(["Colore attuale", selectedColor]);
+    }
+    colors.forEach(([label, value]) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "movement-tag-color";
+      button.style.backgroundColor = value;
+      button.setAttribute("aria-label", label);
+      button.setAttribute("aria-pressed", String(value.toLowerCase() === selectedColor?.toLowerCase()));
+      button.addEventListener("click", () => {
+        onSelect(value);
+        [...container.children].forEach((item) => item.setAttribute("aria-pressed", String(item === button)));
+      });
+      container.appendChild(button);
+    });
+  }
+  renderTagPalette(palette, color, (value) => color = value);
+  const renderList = () => {
+    list.replaceChildren();
+    if (!catalog.length) list.textContent = "Nessun Tag disponibile.";
+    catalog.forEach((tag) => {
+      const row = document.createElement("div");
+      row.className = "tags-page-row";
+      const label = document.createElement("span");
+      label.className = "tags-page-name";
+      const name = document.createElement("span");
+      name.textContent = tag.name;
+      label.append(createMovementTagDot(tag), name);
+      const edit = document.createElement("button");
+      edit.type = "button";
+      edit.className = "secondary-action tags-edit-button";
+      edit.setAttribute("aria-label", `Modifica Tag ${tag.name}`);
+      edit.title = "Modifica Tag";
+      edit.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L9 17l-4 1 1-4z"/></svg>';
+      edit.disabled = saving || refreshing;
+      edit.addEventListener("click", () => {
+        if (saving || refreshing) return;
+        editingId = tag.id;
+        editTrigger = edit;
+        editName.value = tag.name;
+        editColor = tag.color;
+        renderTagPalette(editPalette, editColor, (value) => editColor = value);
+        editError.textContent = "";
+        editModal.classList.add("is-open");
+        editModal.setAttribute("aria-hidden", "false");
+        editName.focus();
+      });
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.className = "secondary-action tags-edit-button tags-delete-button";
+      remove.setAttribute("aria-label", `Elimina Tag ${tag.name}`);
+      remove.title = "Elimina Tag";
+      remove.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M9 6V4h6v2M19 6l-1 14H6L5 6M10 10v6M14 10v6"/></svg>';
+      remove.disabled = saving || refreshing;
+      remove.addEventListener("click", () => {
+        if (saving || refreshing) return;
+        pendingDeleteTag = tag;
+        deleteTrigger = remove;
+        deleteQuestion.textContent = `Vuoi eliminare il Tag “${tag.name}”?`;
+        deleteError.textContent = "";
+        deleteModal.classList.add("is-open");
+        deleteModal.setAttribute("aria-hidden", "false");
+        deleteCancel.focus();
+      });
+      const actions = document.createElement("div");
+      actions.className = "tags-row-actions";
+      actions.append(edit, remove);
+      row.append(label, actions);
+      list.appendChild(row);
+    });
+  };
+  function closeTagEditModal() {
+    if (saving) return;
+    editingId = null;
+    editModal.classList.remove("is-open");
+    editModal.setAttribute("aria-hidden", "true");
+    if (editTrigger?.isConnected) editTrigger.focus();
+    else retryButton.focus();
+  }
+  editCancel.addEventListener("click", closeTagEditModal);
+  editClose.addEventListener("click", closeTagEditModal);
+  editModal.addEventListener("click", (event) => {
+    if (event.target === editModal) closeTagEditModal();
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && editModal.classList.contains("is-open")) closeTagEditModal();
+  });
+  editForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (saving || refreshing || editingId === null) return;
+    const name = editName.value.trim();
+    if (!name) {
+      editError.textContent = "Inserisci il nome del Tag.";
+      editName.focus();
+      return;
+    }
+    saving = true;
+    editError.textContent = "";
+    [...editForm.elements, ...form.elements, editClose].forEach((element) => element.disabled = true);
+    retryButton.disabled = true;
+    renderList();
+    try {
+      const { data, error } = await supabaseClient.from("tags")
+        .update({ name, color: editColor }).eq("id", editingId).select("id,name,color").single();
+      if (error) throw error;
+      catalog = catalog.filter((tag) => String(tag.id) !== String(data.id));
+      catalog.push(data);
+      catalog.sort((a, b) => a.name.localeCompare(b.name, "it"));
+      saving = false;
+      closeTagEditModal();
+      showStatus("Tag aggiornato.");
+    } catch (error) {
+      editError.textContent = error.code === "23505"
+        ? "Esiste già un Tag con questo nome, anche con maiuscole o minuscole diverse."
+        : `Errore salvataggio Tag: ${error.message}`;
+    } finally {
+      saving = false;
+      [...editForm.elements, ...form.elements, editClose].forEach((element) => element.disabled = false);
+      retryButton.disabled = false;
+      renderList();
+    }
+  });
+  function closeTagDeleteModal() {
+    if (deleting) return;
+    pendingDeleteTag = null;
+    deleteError.textContent = "";
+    deleteModal.classList.remove("is-open");
+    deleteModal.setAttribute("aria-hidden", "true");
+    if (deleteTrigger?.isConnected) deleteTrigger.focus();
+    else retryButton.focus();
+  }
+  deleteCancel.addEventListener("click", closeTagDeleteModal);
+  deleteClose.addEventListener("click", closeTagDeleteModal);
+  deleteModal.addEventListener("click", (event) => {
+    if (event.target === deleteModal) closeTagDeleteModal();
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && deleteModal.classList.contains("is-open")) closeTagDeleteModal();
+  });
+  deleteConfirm.addEventListener("click", async () => {
+    if (saving || refreshing || deleting || !pendingDeleteTag) return;
+    const tag = pendingDeleteTag;
+        deleting = true;
+        saving = true;
+        deleteError.textContent = "";
+        deleteConfirm.disabled = true;
+        deleteCancel.disabled = true;
+        deleteClose.disabled = true;
+        deleteConfirm.textContent = "Eliminazione...";
+        [...form.elements].forEach((element) => element.disabled = true);
+        retryButton.disabled = true;
+        renderList();
+        showStatus(`Eliminazione del Tag “${tag.name}”...`);
+        try {
+          const { data, error } = await supabaseClient.from("tags").delete()
+            .eq("id", tag.id).select("id");
+          if (error) throw error;
+          if (!data?.length) throw new Error("Tag non trovato o eliminazione non autorizzata. Aggiorna l'elenco e riprova.");
+          catalog = catalog.filter((item) => String(item.id) !== String(tag.id));
+          if (String(editingId) === String(tag.id)) resetForm();
+          deleting = false;
+          closeTagDeleteModal();
+          showStatus(`Tag “${tag.name}” eliminato.`);
+        } catch (error) {
+          deleteError.textContent = `Errore eliminazione Tag: ${error.message}`;
+        } finally {
+          deleting = false;
+          saving = false;
+          deleteConfirm.disabled = false;
+          deleteCancel.disabled = false;
+          deleteClose.disabled = false;
+          deleteConfirm.textContent = "Elimina Tag";
+          [...form.elements].forEach((element) => element.disabled = false);
+          retryButton.disabled = false;
+          renderList();
+        }
+  });
+  const refresh = async () => {
+    if (saving || refreshing) return;
+    refreshing = true;
+    retryButton.disabled = true;
+    saveButton.disabled = true;
+    renderList();
+    showStatus("Caricamento Tag...");
+    try {
+      catalog = await fetchTagsCatalog();
+      renderList();
+      showStatus("");
+    } catch (error) {
+      showStatus(`Errore caricamento Tag: ${error.message}`, true);
+    } finally {
+      refreshing = false;
+      retryButton.disabled = false;
+      saveButton.disabled = false;
+      renderList();
+    }
+  };
+  cancelButton.addEventListener("click", resetForm);
+  retryButton.addEventListener("click", refresh);
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (saving || refreshing) return;
+    const name = nameInput.value.trim();
+    if (!name) {
+      showStatus("Inserisci il nome del Tag.", true);
+      nameInput.focus();
+      return;
+    }
+    saving = true;
+    const selectedColor = color;
+    [...form.elements].forEach((element) => element.disabled = true);
+    retryButton.disabled = true;
+    renderList();
+    showStatus("Salvataggio Tag...");
+    try {
+      // The database's citext UNIQUE constraint is authoritative for duplicates.
+      const result = await supabaseClient.from("tags").insert({ name, color: selectedColor }).select("id,name,color").single();
+      if (result.error) throw result.error;
+      catalog = catalog.filter((tag) => String(tag.id) !== String(result.data.id));
+      catalog.push(result.data);
+      catalog.sort((a, b) => a.name.localeCompare(b.name, "it"));
+      resetForm();
+      showStatus("Tag creato.");
+    } catch (error) {
+      showStatus(error.code === "23505" ? "Esiste già un Tag con questo nome, anche con maiuscole o minuscole diverse." : `Errore salvataggio Tag: ${error.message}`, true);
+    } finally {
+      saving = false;
+      [...form.elements].forEach((element) => element.disabled = false);
+      retryButton.disabled = false;
+      renderList();
+    }
+  });
+  refresh();
+}
+
 async function openMovementModal() {
-  const today = new Date().toISOString().split("T")[0];
+  if (movementSaving) return;
+  const request = ++movementEditRequest;
+  const todayParts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Rome", year: "numeric", month: "2-digit", day: "2-digit",
+  }).formatToParts(new Date());
+  const part = (type) => todayParts.find((item) => item.type === type).value;
+  const today = `${part("year")}-${part("month")}-${part("day")}`;
   modalMode = "create";
   editingTxId = null;
+  movementAccountId = "FINECO_MAIN";
+  movementCreateTxId = crypto.randomUUID();
+  loadMovementTags();
   movementModalTitle.textContent = "Nuovo movimento";
   saveMovementPlaceholderButton.textContent = "Salva movimento";
   movementDateInput.value = today;
@@ -4445,17 +5004,20 @@ async function openMovementModal() {
   movementTypeSwitch.checked = false;
   movementInTotalsSwitch.checked = true;
   movementModalError.textContent = "";
-  movementCurrentBalance = 0;
+  movementCurrentBalance = null;
   currentBalancePreview.textContent = "Carico...";
   nextBalancePreview.textContent = "Carico...";
   movementModal.classList.add("is-open");
   movementModal.setAttribute("aria-hidden", "false");
 
   try {
-    movementCurrentBalance = await getCurrentFinecoBalance();
-    currentBalancePreview.textContent = formatEuro(movementCurrentBalance);
+    const balance = await getCurrentFinecoBalance();
+    if (request !== movementEditRequest || modalMode !== "create") return;
+    movementCurrentBalance = balance;
+    currentBalancePreview.textContent = formatEuro(balance);
     updateSaldoPreview();
   } catch (error) {
+    if (request !== movementEditRequest || modalMode !== "create") return;
     showMovementModalError(`Errore lettura saldo: ${error.message}`);
     currentBalancePreview.textContent = "Errore";
     nextBalancePreview.textContent = "Errore";
@@ -4606,6 +5168,10 @@ async function saveRevolutSnapshot() {
 }
 
 function closeMovementModal() {
+  if (movementSaving) return;
+  movementEditRequest += 1;
+  movementTagsSession += 1;
+  movementSelectedTagIds.clear();
   movementModal.classList.remove("is-open");
   movementModal.setAttribute("aria-hidden", "true");
 }
@@ -4640,11 +5206,7 @@ function getSignedMovementAmount() {
 }
 
 function updateSaldoPreview() {
-  const parsedAmount = parseItalianAmount(movementAmountInput.value);
-  const amount = Number.isFinite(parsedAmount) && parsedAmount !== 0 ? getSignedMovementAmount() : 0;
-  const nextBalance = movementCurrentBalance + amount;
-
-  nextBalancePreview.textContent = formatEuro(nextBalance);
+  nextBalancePreview.textContent = "Aggiornato al salvataggio";
 }
 
 function showMovementModalError(message) {
@@ -4701,18 +5263,19 @@ async function getFinecoBalanceByMonth(year, month, period) {
     account_id: "FINECO_MAIN",
     startDate,
     endDateExclusive,
-    order: ["date desc", "created_at desc"],
+    order: ["date desc", "created_at desc", "id desc"],
     limit: 1,
   });
 
   const { data, error } = await supabaseClient
     .from("transactions")
-    .select("date,created_at,balance")
+    .select("id,date,created_at,balance")
     .eq("account_id", "FINECO_MAIN")
     .gte("date", startDate)
     .lt("date", endDateExclusive)
     .order("date", { ascending: false })
     .order("created_at", { ascending: false })
+    .order("id", { ascending: false })
     .limit(1);
 
   if (error) {
@@ -4999,291 +5562,99 @@ function getMovementFormData() {
   };
 }
 
-async function getCurrentFinecoBalance() {
-  const { data, error } = await supabaseClient
-    .from("transactions")
-    .select("balance")
-    .eq("account_id", "FINECO_MAIN")
-    .order("date", { ascending: false })
-    .order("created_at", { ascending: false })
-    .limit(1);
-
-  if (error) {
-    throw error;
-  }
-
-  const balance = Number(data?.[0]?.balance ?? 0);
-  return Number.isFinite(balance) ? balance : 0;
-}
-
-function roundBalance(value) {
-  return Math.round((Number(value) + Number.EPSILON) * 100) / 100;
-}
-
-function compareTransactionPosition(first, second) {
-  const firstDate = String(first?.date || "");
-  const secondDate = String(second?.date || "");
-
-  if (firstDate !== secondDate) {
-    return firstDate.localeCompare(secondDate);
-  }
-
-  const firstCreatedAt = String(first?.created_at || "");
-  const secondCreatedAt = String(second?.created_at || "");
-
-  if (firstCreatedAt !== secondCreatedAt) {
-    return firstCreatedAt.localeCompare(secondCreatedAt);
-  }
-
-  const firstId = Number(first?.id);
-  const secondId = Number(second?.id);
-
-  if (Number.isFinite(firstId) && Number.isFinite(secondId)) {
-    return firstId - secondId;
-  }
-
-  return String(first?.id || "").localeCompare(String(second?.id || ""));
-}
-
-function getEarliestTransactionPosition(first, second) {
-  return compareTransactionPosition(first, second) <= 0 ? first : second;
-}
-
-async function recalculateBalancesFrom(accountId, startDate, startCreatedAt, startId, operation = "recalculate") {
-  if (!accountId) {
-    throw new Error("account_id mancante per il ricalcolo balance.");
-  }
-
-  const { data, error } = await supabaseClient
-    .from("transactions")
-    .select("id,tx_id,date,created_at,amount,balance,account_id")
-    .eq("account_id", accountId)
-    .order("date", { ascending: true })
-    .order("created_at", { ascending: true })
-    .order("id", { ascending: true });
-
-  if (error) {
-    throw error;
-  }
-
-  const transactions = data ?? [];
-  const startPosition = {
-    date: startDate,
-    created_at: startCreatedAt,
-    id: startId,
-  };
-  const startIndex = transactions.findIndex((transaction) => compareTransactionPosition(transaction, startPosition) >= 0);
-
-  if (startIndex === -1) {
-    const previousMovement = transactions.at(-1) ?? null;
-    const baseBalance = roundBalance(Number(previousMovement?.balance) || 0);
-
-    console.debug("[Movimenti] Ricalcolo parziale balance", {
-      operation,
-      account_id: accountId,
-      startPoint: startPosition,
-      baseBalance,
-      recalculatedCount: 0,
-      firstUpdatedMovement: null,
-      lastUpdatedMovement: null,
-      finalBalance: baseBalance,
-    });
-
-    return 0;
-  }
-
-  const previousMovement = startIndex > 0 ? transactions[startIndex - 1] : null;
-  let runningBalance = roundBalance(Number(previousMovement?.balance) || 0);
-  const rowsToUpdate = [];
-  let firstRecalculatedMovement = null;
-  let lastRecalculatedMovement = null;
-
-  for (let index = startIndex; index < transactions.length; index += 1) {
-    const transaction = transactions[index];
-    const amount = Number(transaction.amount);
-
-    runningBalance = roundBalance(runningBalance + (Number.isFinite(amount) ? amount : 0));
-    const currentBalance = Number(transaction.balance);
-
-    if (!firstRecalculatedMovement) firstRecalculatedMovement = transaction;
-    lastRecalculatedMovement = transaction;
-
-    if (!Number.isFinite(currentBalance) || roundBalance(currentBalance) !== runningBalance) {
-      rowsToUpdate.push({
-        tx_id: transaction.tx_id,
-        balance: runningBalance,
-      });
-    }
-  }
-
-  const updateBatchSize = 25;
-  for (let index = 0; index < rowsToUpdate.length; index += updateBatchSize) {
-    const batch = rowsToUpdate.slice(index, index + updateBatchSize);
-    const results = await Promise.all(
-      batch.map((row) => supabaseClient
-        .from("transactions")
-        .update({ balance: row.balance })
-        .eq("tx_id", row.tx_id)),
-    );
-
-    const failedResult = results.find((result) => result.error);
-    if (failedResult?.error) {
-      throw failedResult.error;
-    }
-  }
-
-  console.debug("[Movimenti] Ricalcolo parziale balance", {
-    operation,
-    account_id: accountId,
-    startPoint: startPosition,
-    baseBalance: roundBalance(Number(previousMovement?.balance) || 0),
-    recalculatedCount: transactions.length - startIndex,
-    updatedCount: rowsToUpdate.length,
-    firstUpdatedMovement: firstRecalculatedMovement,
-    lastUpdatedMovement: lastRecalculatedMovement,
-    finalBalance: runningBalance,
+async function getCurrentFinecoBalance(accountId = "FINECO_MAIN") {
+  const { data, error } = await supabaseClient.rpc("get_account_balance", {
+    p_account_id: accountId,
   });
+  if (error) throw error;
+  if (data === null || data === undefined || data === "" || !Number.isFinite(Number(data))) {
+    throw new Error("Il database non ha restituito un saldo valido.");
+  }
+  return Number(data);
+}
 
-  return rowsToUpdate.length;
+async function ensureMovementCheckpoints() {
+  // Once per Rome calendar month in this page session, not after each save.
+  const month = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Europe/Rome", year: "numeric", month: "2-digit",
+  }).format(new Date());
+  if (!movementCheckpointsPromise || movementCheckpointsMonth !== month) {
+    movementCheckpointsMonth = month;
+    movementCheckpointsPromise = supabaseClient.rpc("ensure_balance_checkpoints", {
+      p_account_id: "FINECO_MAIN",
+    }).then(({ error }) => {
+      if (error) throw error;
+    }).catch((error) => {
+      movementCheckpointsPromise = null;
+      throw error;
+    });
+  }
+  return movementCheckpointsPromise;
 }
 
 async function saveMovement() {
+  if (movementSaving) return;
+  if (!movementTagsReady) {
+    showMovementModalError("Attendi il caricamento dei Tag. In caso di errore, riapri la modale per riprovare.");
+    return;
+  }
   if (!supabaseClient) {
     showMovementModalError("Credenziali Supabase mancanti.");
     return;
   }
-
   const { value, error } = getMovementFormData();
-
   if (error) {
     showMovementModalError(error);
     return;
   }
-
-  saveMovementPlaceholderButton.disabled = true;
+  const operation = modalMode === "edit" ? "update" : "insert";
+  // Keep the same tx_id on retries: a lost response cannot create a duplicate.
+  if (operation === "insert" && !movementCreateTxId) movementCreateTxId = crypto.randomUUID();
+  const txId = operation === "update" ? editingTxId : movementCreateTxId;
+  setMovementSubmitting(true);
   saveMovementPlaceholderButton.textContent = "Salvo...";
   showMovementModalError("");
-
   try {
-    let saveError = null;
-
-    if (modalMode === "edit") {
-      const { data: previousMovement, error: previousMovementError } = await supabaseClient
-        .from("transactions")
-        .select("id,tx_id,date,created_at,amount,balance,account_id")
-        .eq("tx_id", editingTxId)
-        .single();
-
-      if (previousMovementError) {
-        showMovementModalError(`Errore lettura movimento: ${previousMovementError.message}`);
-        return;
-      }
-
-      const { error: updateError } = await supabaseClient
-        .from("transactions")
-        .update({
-          date: value.date,
-          description: value.description,
-          amount: value.amount,
-          in_totals: value.inTotals,
-        })
-        .eq("tx_id", editingTxId);
-
-      saveError = updateError;
-
-      if (!saveError) {
-        const { data: updatedMovement, error: updatedMovementError } = await supabaseClient
-          .from("transactions")
-          .select("id,tx_id,date,created_at,amount,balance,account_id")
-          .eq("tx_id", editingTxId)
-          .single();
-
-        if (updatedMovementError) {
-          showMovementModalError(`Errore lettura movimento aggiornato: ${updatedMovementError.message}`);
-          return;
-        }
-
-        const previousAccountId = previousMovement.account_id || "FINECO_MAIN";
-        const updatedAccountId = updatedMovement.account_id || previousAccountId;
-
-        if (previousAccountId !== updatedAccountId) {
-          await recalculateBalancesFrom(
-            previousAccountId,
-            previousMovement.date,
-            previousMovement.created_at,
-            previousMovement.id,
-            "update-old-account",
-          );
-          await recalculateBalancesFrom(
-            updatedAccountId,
-            updatedMovement.date,
-            updatedMovement.created_at,
-            updatedMovement.id,
-            "update-new-account",
-          );
-        } else {
-          const startMovement = getEarliestTransactionPosition(previousMovement, updatedMovement);
-          await recalculateBalancesFrom(
-            updatedAccountId,
-            startMovement.date,
-            startMovement.created_at,
-            startMovement.id,
-            "update",
-          );
-        }
-      }
-    } else {
-      const currentBalance = movementCurrentBalance;
-      const nextBalance = currentBalance + value.amount;
-      const txId = crypto.randomUUID();
-
-      currentBalancePreview.textContent = formatEuro(currentBalance);
-      updateSaldoPreview();
-
-      const { data: insertedMovement, error: insertError } = await supabaseClient.from("transactions").insert({
-        tx_id: txId,
-        date: value.date,
-        description: value.description,
-        amount: value.amount,
-        in_totals: value.inTotals,
-        account_id: "FINECO_MAIN",
-        balance: nextBalance,
-      }).select("id,tx_id,date,created_at,account_id").single();
-
-      saveError = insertError;
-
-      if (!saveError) {
-        await recalculateBalancesFrom(
-          insertedMovement.account_id || "FINECO_MAIN",
-          insertedMovement.date,
-          insertedMovement.created_at,
-          insertedMovement.id,
-          "insert",
-        );
-      }
-    }
-
-    if (saveError) {
-      showMovementModalError(`Errore salvataggio movimento: ${saveError.message}`);
-      return;
-    }
-
+    const { data, error: saveError } = await supabaseClient.rpc("save_transaction", {
+      p_operation: operation,
+      p_tx_id: txId,
+      p_date: value.date,
+      p_description: value.description,
+      p_amount: value.amount,
+      p_account_id: movementAccountId,
+      p_in_totals: value.inTotals,
+      p_tag_ids: [...movementSelectedTagIds],
+    });
+    if (saveError) throw saveError;
+    if (!data?.transaction?.tx_id) throw new Error("Risposta di salvataggio non valida.");
+    movementTransactionId = data.transaction.id;
+    editingTxId = data.transaction.tx_id;
+    modalMode = "edit";
+    movementOriginalTagIds = new Set(movementSelectedTagIds);
+    setMovementSubmitting(false);
     closeMovementModal();
-    await loadMovimenti();
+    await refreshMovimentiAfterMutation();
   } catch (saveError) {
-    showMovementModalError(`Errore salvataggio movimento: ${saveError.message}`);
+    const message = saveError.code === "23505" && operation === "insert"
+      ? "Questo movimento potrebbe essere già stato salvato. Chiudi la modale e verifica l'elenco prima di inserirlo nuovamente."
+      : saveError.message;
+    showMovementModalError(`Errore salvataggio movimento: ${message}`);
   } finally {
-    saveMovementPlaceholderButton.disabled = false;
+    setMovementSubmitting(false);
     saveMovementPlaceholderButton.textContent = modalMode === "edit" ? "Salva modifiche" : "Salva movimento";
   }
 }
 
 async function editMovement(txId) {
+  if (movementSaving) return;
+  const request = ++movementEditRequest;
   const { data, error } = await supabaseClient
     .from("transactions")
     .select("*")
     .eq("tx_id", txId)
     .single();
+
+  if (request !== movementEditRequest || movementSaving) return;
 
   if (error) {
     alert(`Errore lettura movimento: ${error.message}`);
@@ -5294,6 +5665,8 @@ async function editMovement(txId) {
 
   modalMode = "edit";
   editingTxId = txId;
+  movementAccountId = data.account_id;
+  loadMovementTags(data.id);
   movementModalTitle.textContent = "Modifica movimento";
   saveMovementPlaceholderButton.textContent = "Salva modifiche";
   movementModalError.textContent = "";
@@ -5302,11 +5675,21 @@ async function editMovement(txId) {
   movementAmountInput.value = formatAmountInput(amount);
   movementTypeSwitch.checked = amount > 0;
   movementInTotalsSwitch.checked = Boolean(data.in_totals);
-  movementCurrentBalance = Number.isFinite(Number(data.balance)) ? Number(data.balance) : 0;
-  currentBalancePreview.textContent = formatEuro(movementCurrentBalance);
+  movementCurrentBalance = null;
+  currentBalancePreview.textContent = "Carico...";
   updateSaldoPreview();
   movementModal.classList.add("is-open");
   movementModal.setAttribute("aria-hidden", "false");
+  try {
+    const balance = await getCurrentFinecoBalance(data.account_id);
+    if (request !== movementEditRequest || editingTxId !== txId) return;
+    movementCurrentBalance = balance;
+    currentBalancePreview.textContent = formatEuro(balance);
+  } catch (balanceError) {
+    if (request !== movementEditRequest || editingTxId !== txId) return;
+    currentBalancePreview.textContent = "Errore";
+    showMovementModalError(`Errore lettura saldo: ${balanceError.message}`);
+  }
 }
 
 function openDeleteMovementModal(txId) {
@@ -5338,37 +5721,13 @@ async function deleteMovement() {
   deleteMovementModalError.textContent = "";
 
   try {
-    const { data: movementToDelete, error: readError } = await supabaseClient
-      .from("transactions")
-      .select("id,tx_id,date,created_at,account_id")
-      .eq("tx_id", pendingDeleteTxId)
-      .single();
-
-    if (readError) {
-      deleteMovementModalError.textContent = `Errore lettura movimento: ${readError.message}`;
-      return;
-    }
-
-    const { error } = await supabaseClient
-      .from("transactions")
-      .delete()
-      .eq("tx_id", pendingDeleteTxId);
-
-    if (error) {
-      deleteMovementModalError.textContent = `Errore eliminazione movimento: ${error.message}`;
-      return;
-    }
-
-    await recalculateBalancesFrom(
-      movementToDelete.account_id || "FINECO_MAIN",
-      movementToDelete.date,
-      movementToDelete.created_at,
-      movementToDelete.id,
-      "delete",
-    );
+    const { error } = await supabaseClient.rpc("delete_transaction", {
+      p_tx_id: pendingDeleteTxId,
+    });
+    if (error) throw error;
 
     closeDeleteMovementModal();
-    await loadMovimenti();
+    await refreshMovimentiAfterMutation();
   } catch (error) {
     deleteMovementModalError.textContent = `Errore eliminazione movimento: ${error.message}`;
   } finally {
@@ -5421,6 +5780,11 @@ function initDeleteMovementModal() {
 }
 
 function initMovementModal() {
+  initMovementTags();
+  movementModal.querySelector(".movement-form").addEventListener("submit", (event) => {
+    event.preventDefault();
+    saveMovement();
+  });
   openMovementModalButton.addEventListener("click", openMovementModal);
   closeMovementModalButton.addEventListener("click", closeMovementModal);
   cancelMovementModalButton.addEventListener("click", closeMovementModal);
@@ -5433,7 +5797,12 @@ function initMovementModal() {
 
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && movementModal.classList.contains("is-open")) {
-      closeMovementModal();
+      if (movementTagsPanel && !movementTagsPanel.hidden) {
+        setMovementTagPanel(movementTagsPanel, movementTagsToggle, false);
+        movementTagsToggle.focus();
+      } else {
+        closeMovementModal();
+      }
     }
   });
 
@@ -11967,6 +12336,7 @@ function initAdminDbSchemaPage() {
 
 
 async function loadMovimenti() {
+  const viewRequestId = enterMovimentiMonthlyMode();
   if (!supabaseClient) {
     renderMovimentiState("error-state", "Credenziali Supabase mancanti.");
     setSummaryError();
@@ -11982,14 +12352,18 @@ async function loadMovimenti() {
   const summariesPromise = loadMovimentiSummaries();
 
   try {
+    await ensureMovementCheckpoints();
     const { data, error } = await supabaseClient
       .from("transactions")
-      .select("*")
+      .select("*,transaction_tags(tag_id,tags(id,name,color))")
       .gte("date", startDate)
       .lt("date", endDateExclusive)
       .order("date", { ascending: false })
+      .order("created_at", { ascending: false })
+      .order("id", { ascending: false })
       .limit(100);
 
+    if (viewRequestId !== movimentiSearchState.requestId || movimentiSearchState.mode !== "monthly") return;
     if (error) {
       renderMovimentiState("error-state", `Errore lettura movimenti: ${error.message}`);
       return;
@@ -11997,13 +12371,212 @@ async function loadMovimenti() {
 
     renderMovimentiTable(data);
   } catch (error) {
-    renderMovimentiState("error-state", `Errore lettura movimenti: ${error.message}`);
+    if (viewRequestId === movimentiSearchState.requestId && movimentiSearchState.mode === "monthly") {
+      renderMovimentiState("error-state", `Errore lettura movimenti: ${error.message}`);
+    }
   } finally {
     await summariesPromise;
     applyMovimentiFilterButton.disabled = false;
     if (movimentiPrevMonthButton) movimentiPrevMonthButton.disabled = false;
     if (movimentiNextMonthButton) movimentiNextMonthButton.disabled = false;
     applyMovimentiFilterButton.textContent = "Applica";
+    if (viewRequestId === movimentiSearchState.requestId && movimentiSearchState.mode === "monthly") {
+      movimentiTableElement.setAttribute("aria-busy", "false");
+    }
+  }
+}
+
+function buildTransactionSearchFilters(form, selectedTagIds, emptyTagsAsNull = false) {
+  const fields = form.elements;
+  const field = (name) => fields.namedItem(name);
+  const amount = (name) => field(name).value === "" ? null : Number(field(name).value);
+  const tagIds = [...selectedTagIds].sort();
+  const movementType = field("movement_type")?.value
+    || (field("income").checked && field("expense").checked ? "all" : field("income").checked ? "income" : "expense");
+  const inTotals = field("in_totals")?.value || "";
+  return {
+    p_tag_ids: tagIds.length || !emptyTagsAsNull ? tagIds : null,
+    p_date_from: field("date_from").value || null,
+    p_date_to: field("date_to").value || null,
+    p_description: field("description").value.trim() || null,
+    p_amount_from: amount("amount_from"), p_amount_to: amount("amount_to"),
+    p_movement_type: movementType,
+    p_in_totals: inTotals === "" ? null : inTotals === "true",
+    p_tag_presence: field("tag_presence")?.value || "all",
+    p_sort: field("sort").value,
+  };
+}
+
+function validateTransactionSearchFilters(filters) {
+  if (filters.p_date_from && filters.p_date_to && filters.p_date_from > filters.p_date_to) {
+    return "Data da deve essere precedente o uguale a Data a.";
+  }
+  for (const value of [filters.p_amount_from, filters.p_amount_to]) {
+    if (value !== null && (!Number.isFinite(value) || value < 0)) return "Gli importi devono essere numeri finiti positivi o zero.";
+  }
+  if (filters.p_amount_from !== null && filters.p_amount_to !== null && filters.p_amount_from > filters.p_amount_to) {
+    return "Importo da deve essere minore o uguale a Importo a.";
+  }
+  if (filters.p_tag_ids?.length && filters.p_tag_presence === "without_tags") return "Tag specifici e Senza Tag sono incompatibili.";
+  return "";
+}
+
+async function fetchTransactionSearchPage(filters, page) {
+  const { data, error } = await supabaseClient.rpc("search_transactions", {
+    ...filters, p_page: page, p_page_size: 50,
+  });
+  if (error) throw error;
+  if (!data?.summary || !Array.isArray(data.items) || !data.pagination) throw new Error("Risposta di ricerca non valida.");
+  return data;
+}
+
+// Integrated search owns only the view mode and filter snapshots, never mutations.
+const movimentiSearchState = {
+  mode: "monthly", appliedFilters: null, pagination: null, summary: null,
+  requestId: 0, busy: false, form: null, selector: null,
+};
+
+function renderMovimentiSearchSummary() {
+  const card = document.getElementById("movimenti-search-summary");
+  if (!card) return;
+  const { mode, summary } = movimentiSearchState;
+  card.hidden = mode !== "search" || !summary;
+  if (card.hidden) return;
+  const count = new Intl.NumberFormat("it-IT").format(summary.count);
+  document.getElementById("movimenti-search-summary-count").textContent = `${count} ${Number(summary.count) === 1 ? "movimento" : "movimenti"}`;
+  for (const key of ["income", "expense", "net"]) {
+    setSummaryAmount(document.getElementById(`movimenti-search-summary-${key}`), summary[key]);
+  }
+}
+
+function updateMovimentiSearchPagination() {
+  const state = movimentiSearchState;
+  const pagination = state.pagination;
+  for (const suffix of ["-top", ""]) {
+    const wrapper = document.getElementById(`movimenti-search-pagination${suffix}`);
+    if (!wrapper) continue;
+    wrapper.hidden = state.mode !== "search" || !pagination || pagination.total_pages <= 1;
+    document.getElementById(`movimenti-search-page-label${suffix}`).textContent = pagination
+      ? `Pagina ${pagination.page} / ${pagination.total_pages}` : "";
+    document.getElementById(`movimenti-search-previous${suffix}`).disabled = state.busy || !pagination?.has_previous;
+    document.getElementById(`movimenti-search-next${suffix}`).disabled = state.busy || !pagination?.has_next;
+  }
+}
+
+function enterMovimentiMonthlyMode() {
+  const state = movimentiSearchState;
+  state.mode = "monthly";
+  state.busy = false;
+  state.pagination = null;
+  state.summary = null;
+  state.appliedFilters = null;
+  renderMovimentiSearchSummary();
+  if (state.form) document.getElementById("movimenti-search-submit").disabled = false;
+  movimentiTableElement?.setAttribute("aria-busy", "true");
+  updateMovimentiSearchPagination();
+  return ++state.requestId;
+}
+
+async function refreshMovimentiAfterMutation() {
+  const state = movimentiSearchState;
+  if (state.mode !== "search") {
+    await loadMovimenti();
+    return;
+  }
+  const filters = { ...state.appliedFilters, p_tag_ids: state.appliedFilters.p_tag_ids ? [...state.appliedFilters.p_tag_ids] : null };
+  await runMovimentiSearch(filters, state.pagination?.page || 1, { refreshAfterMutation: true });
+}
+
+async function runMovimentiSearch(filters, page = 1, { refreshAfterMutation = false } = {}) {
+  const state = movimentiSearchState;
+  // Paging preserves the completed summary; a new search waits for its own summary.
+  const retainedSummary = !refreshAfterMutation && state.mode === "search" && filters === state.appliedFilters ? state.summary : null;
+  const snapshot = { ...filters, p_tag_ids: filters.p_tag_ids ? [...filters.p_tag_ids] : null };
+  const requestId = ++state.requestId;
+  state.mode = "search";
+  state.busy = true;
+  state.appliedFilters = snapshot;
+  state.pagination = null;
+  state.summary = retainedSummary;
+  renderMovimentiSearchSummary();
+  document.getElementById("movimenti-search-submit").disabled = true;
+  movimentiTableElement.setAttribute("aria-busy", "true");
+  updateMovimentiSearchPagination();
+  renderMovimentiState("loading-state", "Ricerca movimenti...", true);
+  try {
+    let data = await fetchTransactionSearchPage(snapshot, page);
+    if (requestId !== state.requestId || state.mode !== "search") return;
+    if (refreshAfterMutation && data.pagination.total_pages > 0 && page > data.pagination.total_pages) {
+      data = await fetchTransactionSearchPage(snapshot, data.pagination.total_pages);
+      if (requestId !== state.requestId || state.mode !== "search") return;
+    }
+    if (refreshAfterMutation && data.pagination.total_pages === 0) {
+      data.pagination = { ...data.pagination, page: 1 };
+    }
+    if (data.items.some((item) => !Object.prototype.hasOwnProperty.call(item, "balance"))) {
+      throw new Error("La RPC non restituisce ancora balance: aggiornare search_transactions con la migration dedicata");
+    }
+    state.summary = retainedSummary || data.summary;
+    renderMovimentiSearchSummary();
+    state.pagination = data.pagination;
+    if (!data.items.length) renderMovimentiState("empty-state", "Nessun movimento trovato.");
+    else renderMovimentiTable(data.items);
+  } catch (error) {
+    if (requestId !== state.requestId || state.mode !== "search") return;
+    renderMovimentiState("error-state", `Errore ricerca movimenti: ${error.message || error}. Premi Cerca per riprovare.`);
+  } finally {
+    if (requestId === state.requestId && state.mode === "search") {
+      state.busy = false;
+      document.getElementById("movimenti-search-submit").disabled = false;
+      movimentiTableElement.setAttribute("aria-busy", "false");
+      updateMovimentiSearchPagination();
+    }
+  }
+}
+
+function resetMovimentiSearchFilters() {
+  const state = movimentiSearchState;
+  state.form.reset();
+  state.selector.selectedIds.clear();
+  state.selector.search.value = "";
+  state.form.elements.namedItem("date_from").setCustomValidity("");
+  renderMovementTagSelector(state.selector);
+  setMovementTagPanel(document.getElementById("movimenti-search-tags-panel"), document.getElementById("movimenti-search-tags-toggle"), false);
+  loadMovimenti();
+}
+
+function initMovimentiSearchControls(form, selector) {
+  const state = movimentiSearchState;
+  state.form = form;
+  state.selector = selector;
+  const dateFrom = form.elements.namedItem("date_from");
+  form.addEventListener("input", () => dateFrom.setCustomValidity(""));
+  form.addEventListener("change", () => dateFrom.setCustomValidity(""));
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    if (state.busy) return;
+    const filters = buildTransactionSearchFilters(form, selector.selectedIds, true);
+    const validationError = validateTransactionSearchFilters(filters);
+    dateFrom.setCustomValidity(validationError);
+    if (!validationError) runMovimentiSearch(filters);
+    else dateFrom.reportValidity();
+  });
+  form.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" && event.target.matches("input, select") && !event.isComposing) {
+      event.preventDefault();
+      dateFrom.setCustomValidity("");
+      form.requestSubmit();
+    }
+  });
+  document.getElementById("movimenti-search-reset").addEventListener("click", resetMovimentiSearchFilters);
+  const changePage = (delta) => {
+    if (state.mode === "search" && !state.busy && state.pagination && state.appliedFilters) {
+      runMovimentiSearch(state.appliedFilters, state.pagination.page + delta);
+    }
+  };
+  for (const suffix of ["-top", ""]) {
+    document.getElementById(`movimenti-search-previous${suffix}`).addEventListener("click", () => changePage(-1));
+    document.getElementById(`movimenti-search-next${suffix}`).addEventListener("click", () => changePage(1));
   }
 }
 

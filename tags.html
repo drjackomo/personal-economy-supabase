@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="it">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="robots" content="noindex, nofollow, noarchive, nosnippet">
+    <title>Tag - Personal Economy</title>
+    <link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
+    <link rel="stylesheet" href="css/styles.css?v=20261003-search-integrated-cleanup-1">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="js/app.js?v=20261003-search-integrated-cleanup-1" defer></script>
+  </head>
+  <body>
+    <div id="navbar-root"></div>
+    <main id="tags-page" class="app dashboard-page admin-page">
+      <div id="tags-page-status" class="movement-tags-status tags-page-status" role="status" aria-live="polite"></div>
+      <section class="admin-db-layout" aria-label="Gestione Tag">
+        <article class="dashboard-chart-section admin-db-table-card">
+          <div class="dashboard-chart-header">
+            <h2 class="chart-title">Tag disponibili</h2>
+            <button id="tags-retry" class="chart-btn ghost" type="button">Aggiorna</button>
+          </div>
+          <div id="tags-list" class="tags-page-list">Caricamento Tag...</div>
+        </article>
+        <article class="dashboard-chart-section admin-db-form-card">
+          <div class="dashboard-chart-header">
+            <h2 id="tag-form-title" class="chart-title">Nuovo Tag</h2>
+          </div>
+          <form id="tag-form" class="admin-db-form tags-editor-form" aria-labelledby="tag-form-title">
+            <label class="titoli-asset-row">
+              <span class="titoli-asset-name">Nome del Tag</span>
+              <input id="tag-name" class="titoli-market-input" type="text" autocomplete="off" placeholder="Nome del Tag">
+            </label>
+            <div id="tag-color-field">
+              <div class="movement-tag-color-label">Colore</div>
+              <div id="tag-palette" class="movement-tag-palette" role="group" aria-label="Colore del nuovo Tag"></div>
+            </div>
+            <div class="admin-db-form-actions">
+              <button id="tag-cancel" class="chart-btn ghost" type="button" hidden>Annulla</button>
+              <button id="tag-save" class="titoli-action-button" type="submit">Crea Tag</button>
+            </div>
+          </form>
+        </article>
+      </section>
+    </main>
+    <div id="edit-tag-modal" class="modal-overlay" aria-hidden="true">
+      <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="edit-tag-title">
+        <div class="modal-header">
+          <h2 id="edit-tag-title">Modifica Tag</h2>
+          <button id="close-edit-tag" class="modal-close" type="button" aria-label="Chiudi">×</button>
+        </div>
+        <form id="edit-tag-form" class="admin-db-form tags-editor-form">
+          <label class="titoli-asset-row">
+            <span class="titoli-asset-name">Nome del Tag</span>
+            <input id="edit-tag-name" class="titoli-market-input" type="text" autocomplete="off">
+          </label>
+          <div>
+            <div class="movement-tag-color-label">Colore</div>
+            <div id="edit-tag-palette" class="movement-tag-palette" role="group" aria-label="Colore del Tag"></div>
+          </div>
+          <div id="edit-tag-error" class="modal-error" aria-live="polite"></div>
+          <div class="modal-actions">
+            <button id="cancel-edit-tag" class="secondary-action" type="button">Annulla</button>
+            <button id="save-edit-tag" class="titoli-action-button" type="submit">Salva Tag</button>
+          </div>
+        </form>
+      </div>
+    </div>
+    <div id="delete-tag-modal" class="modal-overlay" aria-hidden="true">
+      <div class="modal-card delete-modal-card" role="dialog" aria-modal="true" aria-labelledby="delete-tag-title" aria-describedby="delete-tag-question delete-tag-description">
+        <div class="modal-header">
+          <div>
+            <h2 id="delete-tag-title">Elimina Tag</h2>
+            <p id="delete-tag-question"></p>
+            <p id="delete-tag-description">Verranno eliminate anche le eventuali associazioni del Tag ai movimenti. I movimenti non verranno eliminati.</p>
+          </div>
+          <button id="close-delete-tag" class="modal-close" type="button" aria-label="Chiudi">×</button>
+        </div>
+        <div id="delete-tag-error" class="modal-error" aria-live="polite"></div>
+        <div class="modal-actions">
+          <button id="cancel-delete-tag" class="secondary-action" type="button">Annulla</button>
+          <button id="confirm-delete-tag" class="danger-action" type="button">Elimina Tag</button>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

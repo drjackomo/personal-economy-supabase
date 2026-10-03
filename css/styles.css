@@ -2721,7 +2721,8 @@ button:disabled {
   gap: 16px;
 }
 
-.summary-card {
+.summary-card,
+.movement-filter-card {
   position: relative;
   overflow: hidden;
   border: 1px solid rgba(148, 163, 184, 0.22);
@@ -2732,7 +2733,8 @@ button:disabled {
   backdrop-filter: blur(10px);
 }
 
-.summary-card::before {
+.summary-card::before,
+.movement-filter-card::before {
   position: absolute;
   top: 0;
   bottom: 0;
@@ -2774,7 +2776,8 @@ button:disabled {
   --summary-glow: rgba(220, 38, 38, 0.12);
 }
 
-.summary-card h2 {
+.summary-card h2,
+.movimenti-search-summary h2 {
   margin-bottom: 14px;
   color: #6b7280;
   font-size: 12px;
@@ -2812,6 +2815,20 @@ button:disabled {
 .summary-row strong {
   color: #0f172a;
   font-size: 15px;
+}
+
+.movimenti-page .dashboard-cards .summary-row,
+.movimenti-page .dashboard-cards .summary-row strong {
+  font-weight: 400;
+}
+
+.movimenti-page .dashboard-cards .summary-row:last-child > span {
+  font-weight: 600;
+}
+
+.movimenti-page .dashboard-cards .summary-row strong.summary-value {
+  font-size: 18px;
+  font-weight: 700;
 }
 
 .summary-row-action {
@@ -2927,6 +2944,11 @@ button:disabled {
   align-items: center;
 }
 
+.movimenti-pagination-controls {
+  display: flex;
+  justify-content: flex-end;
+}
+
 .movimenti-filter-toolbar button {
   display: inline-flex;
   align-items: center;
@@ -2937,7 +2959,12 @@ button:disabled {
   padding: 10px 16px;
 }
 
-.movimenti-filter-toolbar .movimenti-month-nav-button {
+.movimenti-filter-toolbar .movimenti-month-nav-button,
+.movimenti-pagination-controls .movimenti-month-nav-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
   width: 40px;
   min-width: 40px;
   height: 40px;
@@ -2948,18 +2975,21 @@ button:disabled {
   padding: 0;
 }
 
-.movimenti-filter-toolbar .movimenti-month-nav-button:hover {
+.movimenti-filter-toolbar .movimenti-month-nav-button:hover,
+.movimenti-pagination-controls .movimenti-month-nav-button:hover {
   border-color: rgba(96, 165, 250, 0.46);
   background: #f8fafc;
   color: #1d4ed8;
 }
 
-.movimenti-filter-toolbar .movimenti-month-nav-button:focus-visible {
+.movimenti-filter-toolbar .movimenti-month-nav-button:focus-visible,
+.movimenti-pagination-controls .movimenti-month-nav-button:focus-visible {
   outline: 3px solid rgba(59, 130, 246, 0.22);
   outline-offset: 2px;
 }
 
-.movimenti-filter-toolbar button svg {
+.movimenti-filter-toolbar button svg,
+.movimenti-pagination-controls .movimenti-month-nav-button svg {
   width: 16px;
   height: 16px;
   stroke-width: 2.2;
@@ -2983,7 +3013,7 @@ button:disabled {
   color: #334155;
 }
 
-#movimenti-table.output-container.movimenti-output {
+.output-container.movimenti-output {
   /* Movimenti: no internal scroll, page handles scrolling */
   overflow: visible;
   overflow-x: visible;
@@ -3501,6 +3531,34 @@ td.in-totals-column {
   height: 18px;
 }
 
+.movement-filter-pair {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.movement-filter-pair > *,
+.movement-filter-pair input {
+  min-width: 0;
+}
+
+.movement-date-control {
+  position: relative;
+}
+
+.movement-date-control > span {
+  position: absolute;
+  inset-inline-start: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  pointer-events: none;
+  color: #64748b;
+}
+
+.movement-form .movement-date-control input {
+  padding-inline-start: 40px;
+}
+
 .movement-switch-field {
   display: grid;
   gap: 9px;
@@ -3799,7 +3857,7 @@ td.in-totals-column {
 }
 
 .movimenti-page-message:not(.is-visible) {
-  visibility: hidden;
+  display: none;
 }
 
 .movimenti-page-message.is-error {
@@ -4128,4 +4186,289 @@ td.in-totals-column {
   font-size: 16px !important;
   line-height: 1.3 !important;
   font-weight: 500 !important;
+}
+
+/* Tag selector in the shared movement form. */
+#movement-modal .modal-card {
+  max-height: calc(100dvh - 48px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.movement-tags {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.movement-tags legend {
+  margin-bottom: 7px;
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.movement-tag-chips,
+.movement-tag-palette {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.movement-tag-chips:not(:empty) {
+  margin-bottom: 8px;
+}
+
+.movement-tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  max-width: 100%;
+  padding: 4px 8px;
+  border: 1px solid #cbd5e1;
+  border-radius: 999px;
+  background: #f8fafc;
+  color: #0f172a;
+  font-size: 14px;
+}
+
+.movement-tag-chip > span:not(.movement-tag-dot) {
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+
+.movement-tag-dot {
+  display: inline-block;
+  width: 11px;
+  height: 11px;
+  flex: 0 0 11px;
+  border-radius: 50%;
+}
+
+.movement-tag-panel {
+  margin-top: 10px;
+  padding: 12px;
+  border: 1px solid #cbd5e1;
+  border-radius: 12px;
+  background: #f8fafc;
+}
+
+.movement-tag-panel[hidden] {
+  display: none;
+}
+
+.movement-tag-panel > label,
+.movement-tag-color-label {
+  margin-bottom: 7px;
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.movement-tag-color-label {
+  margin-top: 12px;
+}
+
+.movement-tags-list {
+  max-height: 180px;
+  overflow-y: auto;
+  margin-top: 8px;
+  color: #64748b;
+  font-size: 14px;
+}
+
+.movement-form .movement-tag-option {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 42px;
+  padding: 6px;
+  cursor: pointer;
+}
+
+.movement-form .movement-tag-option input {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+  padding: 0;
+  accent-color: #2563eb;
+}
+
+.movement-form .movement-tag-option span {
+  color: #0f172a;
+  font-size: 14px;
+  font-weight: 400;
+  text-transform: none;
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+
+.movement-tag-palette .movement-tag-color {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 3px solid transparent;
+  border-radius: 50%;
+}
+
+.movement-tag-color[aria-pressed="true"] {
+  box-shadow: 0 0 0 2px #0f172a;
+  border-color: #ffffff;
+}
+
+.movement-tags :is(button, input):focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 3px;
+}
+
+.movement-tags-status {
+  margin: 8px 0;
+  color: #64748b;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.movement-tags-status.is-error {
+  color: #dc2626;
+}
+
+@media (max-width: 600px) {
+  #movement-modal {
+    padding: 12px;
+  }
+
+  #movement-modal .modal-card {
+    max-height: calc(100dvh - 24px);
+    padding: 18px;
+  }
+
+  #movement-modal .modal-actions {
+    flex-wrap: wrap;
+  }
+}
+
+.movement-form .movement-tags-control {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 12px;
+  background: #ffffff;
+  color: #0f172a;
+  text-align: left;
+}
+
+.movement-tags-control .movement-tag-chips {
+  min-width: 0;
+  margin: 0;
+}
+
+.movement-tags-chevron {
+  flex-shrink: 0;
+}
+
+.movement-tags-status:empty {
+  display: none;
+}
+
+.tags-page-status {
+  font-size: 14px;
+}
+
+.tags-page-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.tags-page-name {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  color: #0f172a;
+}
+
+.tags-page-name > span:last-child {
+  overflow-wrap: anywhere;
+}
+
+.tags-edit-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  min-width: 40px;
+  min-height: 40px;
+}
+
+.tags-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.tags-delete-button {
+  color: #dc2626;
+}
+
+#tags-page [hidden] {
+  display: none;
+}
+
+#tags-page :is(button, input:not(.titoli-market-input)):focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 3px;
+}
+
+.movimenti-table .movement-table-tags {
+  display: inline;
+  margin: 0;
+}
+
+.movimenti-table .movement-table-tags .movement-tag-chip {
+  font-size: 12px;
+  padding: 3px 7px;
+  white-space: normal;
+  margin-left: 8px;
+  vertical-align: middle;
+}
+
+.tags-editor-form .titoli-market-input {
+  text-align: left;
+}
+
+.movimenti-search-summary {
+  background: #eef5ff;
+}
+
+.movimenti-search-summary .summary-row {
+  border-top-color: #dfe5ee;
+}
+
+.movimenti-search-summary-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.movimenti-search-summary-heading h2 {
+  min-width: 0;
+}
+
+@media (min-width: 1101px) {
+  .movimenti-page .dashboard-cards {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
 }

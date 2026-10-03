@@ -6,60 +6,58 @@
     <meta name="robots" content="noindex, nofollow, noarchive, nosnippet">
     <title>Movimenti - Personal Economy</title>
     <link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
-    <link rel="stylesheet" href="css/styles.css?v=20260925-yearly-detail-3">
+    <link rel="stylesheet" href="css/styles.css?v=20261003-search-integrated-cleanup-1">
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="https://unpkg.com/feather-icons"></script>
-    <script src="js/app.js?v=20260925-yearly-detail-3" defer></script>
+    <script src="js/app.js?v=20261003-search-integrated-cleanup-1" defer></script>
   </head>
   <body>
     <div id="navbar-root"></div>
 
     <main class="app movimenti-page">
-      <div class="movimenti-heading">
-        <h1>Movimenti</h1>
-        <p class="subtitle">Elenco movimenti anno in corso</p>
-      </div>
-
       <div class="movimenti-layout">
-        <aside class="summary-column" aria-label="Riepiloghi movimenti">
-          <article class="summary-card summary-card-year-total">
-            <h2>Consuntivo anno</h2>
-            <div id="yearly-total" class="summary-value">€ 0,00</div>
-          </article>
-
-          <article class="summary-card summary-card-year-flow">
-            <h2>Anno</h2>
-            <div id="open-yearly-income-detail" class="summary-row summary-row-action" role="button" tabindex="0">
-              <span>Entrate</span>
-              <span class="summary-row-value">
-                <strong id="yearly-income" class="summary-income">€ 0,00</strong>
-                <span class="summary-row-chevron" aria-hidden="true">›</span>
-              </span>
-            </div>
-            <div id="open-yearly-expense-detail" class="summary-row summary-row-action" role="button" tabindex="0">
-              <span>Uscite</span>
-              <span class="summary-row-value">
-                <strong id="yearly-expense" class="summary-expense">€ 0,00</strong>
-                <span class="summary-row-chevron" aria-hidden="true">›</span>
-              </span>
-            </div>
-          </article>
-
-          <article class="summary-card summary-card-month-total">
-            <h2>Consuntivo mese</h2>
-            <div id="monthly-total" class="summary-value">€ 0,00</div>
-          </article>
-
-          <article class="summary-card summary-card-month-flow">
-            <h2>Mese</h2>
-            <div class="summary-row">
-              <span>Entrate</span>
-              <strong id="monthly-income" class="summary-income">€ 0,00</strong>
-            </div>
-            <div class="summary-row">
-              <span>Uscite</span>
-              <strong id="monthly-expense" class="summary-expense">€ 0,00</strong>
-            </div>
+        <aside class="summary-column" aria-label="Filtri movimenti">
+          <article class="movement-filter-card">
+            <form id="movimenti-search-form" class="movement-form">
+              <div class="movement-switch-field">
+                <div class="movement-filter-pair">
+                  <div class="movement-switch-inline">
+                    <span id="movimenti-search-income-label">Entrate</span>
+                    <label class="switch">
+                      <input id="movimenti-search-income" name="income" type="checkbox" role="switch" checked aria-labelledby="movimenti-search-income-label" onchange="if (!this.checked &amp;&amp; !this.form.elements.expense.checked) this.checked = true;">
+                      <span class="slider"></span>
+                    </label>
+                  </div>
+                  <div class="movement-switch-inline">
+                    <span id="movimenti-search-expense-label">Uscite</span>
+                    <label class="switch">
+                      <input id="movimenti-search-expense" name="expense" type="checkbox" role="switch" checked aria-labelledby="movimenti-search-expense-label" onchange="if (!this.checked &amp;&amp; !this.form.elements.income.checked) this.checked = true;">
+                      <span class="slider"></span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+              <div class="movement-filter-pair">
+                <div class="movement-date-control"><span aria-hidden="true">Da:</span><input name="date_from" type="date" aria-label="Data da"></div>
+                <div class="movement-date-control"><span aria-hidden="true">A:</span><input name="date_to" type="date" aria-label="Data a"></div>
+              </div>
+              <input name="description" type="text" aria-label="Descrizione" placeholder="Cerca nella descrizione">
+              <div class="movement-filter-pair">
+                <input name="amount_from" type="number" min="0" step="any" inputmode="decimal" aria-label="Importo da" placeholder="Importo da">
+                <input name="amount_to" type="number" min="0" step="any" inputmode="decimal" aria-label="Importo a" placeholder="Importo a">
+              </div>
+              <fieldset class="movement-tags" aria-label="Tag">
+                <button id="movimenti-search-tags-toggle" aria-label="Seleziona Tag" class="movement-tags-control" type="button" disabled aria-expanded="false" aria-controls="movimenti-search-tags-panel"><span id="movimenti-search-tag-chips" class="movement-tag-chips">Seleziona Tag</span><span class="movement-tags-chevron" aria-hidden="true">⌄</span></button>
+                <div id="movimenti-search-tags-panel" class="movement-tag-panel" hidden>
+                  <input id="movimenti-search-tags-query" type="search" aria-label="Cerca Tag" placeholder="Cerca per nome">
+                  <div id="movimenti-search-tags-list" class="movement-tags-list"></div>
+                </div>
+                <div id="movimenti-search-tags-status" class="movement-tags-status" role="status" aria-live="polite"></div>
+                <button id="movimenti-search-tags-retry" class="secondary-action" type="button" hidden>Riprova caricamento Tag</button>
+              </fieldset>
+              <select name="sort" aria-label="Ordinamento"><option value="date_desc">Data: più recenti</option><option value="date_asc">Data: meno recenti</option><option value="amount_desc">Importo: maggiore</option><option value="amount_asc">Importo: minore</option></select>
+              <div class="admin-db-form-actions"><button id="movimenti-search-reset" class="secondary-action" type="button">Azzera filtri</button><button id="movimenti-search-submit" class="primary-action" type="submit">Cerca</button></div>
+            </form>
           </article>
         </aside>
 
@@ -108,9 +106,71 @@
               Revolut
             </button>
           </div>
+          <div class="summary-column dashboard-cards" aria-label="Riepiloghi movimenti">
+            <article class="summary-card summary-card-year-flow">
+              <h2>Anno</h2>
+              <div id="open-yearly-income-detail" class="summary-row summary-row-action" role="button" tabindex="0">
+                <span>Entrate</span>
+                <span class="summary-row-value">
+                  <strong id="yearly-income" class="summary-income">€ 0,00</strong>
+                  <span class="summary-row-chevron" aria-hidden="true">›</span>
+                </span>
+              </div>
+              <div id="open-yearly-expense-detail" class="summary-row summary-row-action" role="button" tabindex="0">
+                <span>Uscite</span>
+                <span class="summary-row-value">
+                  <strong id="yearly-expense" class="summary-expense">€ 0,00</strong>
+                  <span class="summary-row-chevron" aria-hidden="true">›</span>
+                </span>
+              </div>
+              <div class="summary-row">
+                <span>Consuntivo</span>
+                <strong id="yearly-total" class="summary-value">€ 0,00</strong>
+              </div>
+            </article>
+
+            <article class="summary-card summary-card-month-flow">
+              <h2>Mese</h2>
+              <div class="summary-row">
+                <span>Entrate</span>
+                <strong id="monthly-income" class="summary-income">€ 0,00</strong>
+              </div>
+              <div class="summary-row">
+                <span>Uscite</span>
+                <strong id="monthly-expense" class="summary-expense">€ 0,00</strong>
+              </div>
+              <div class="summary-row">
+                <span>Consuntivo</span>
+                <strong id="monthly-total" class="summary-value">€ 0,00</strong>
+              </div>
+            </article>
+            <article id="movimenti-search-summary" class="movement-filter-card summary-card-year-total movimenti-search-summary" hidden aria-live="polite">
+              <header class="movimenti-search-summary-heading">
+                <h2>Risultati ricerca</h2>
+                <span id="movimenti-search-summary-count" class="dashboard-card-date"></span>
+              </header>
+              <div class="summary-row"><span>Entrate</span><strong id="movimenti-search-summary-income" class="summary-income">€ 0,00</strong></div>
+              <div class="summary-row"><span>Uscite</span><strong id="movimenti-search-summary-expense" class="summary-expense">€ 0,00</strong></div>
+              <div class="summary-row"><span>Consuntivo</span><strong id="movimenti-search-summary-net" class="summary-value">€ 0,00</strong></div>
+            </article>
+          </div>
           <div id="movimenti-page-message" class="movimenti-page-message" aria-live="polite"></div>
 
+          <div id="movimenti-search-pagination-top" hidden>
+            <nav class="movimenti-month-nav movimenti-pagination-controls" aria-label="Paginazione ricerca movimenti">
+              <button id="movimenti-search-previous-top" class="movimenti-month-nav-button" type="button" disabled aria-label="Pagina precedente"><i data-feather="chevron-left" aria-hidden="true"></i></button>
+              <span id="movimenti-search-page-label-top" class="movement-tags-status" aria-live="polite"></span>
+              <button id="movimenti-search-next-top" class="movimenti-month-nav-button" type="button" disabled aria-label="Pagina successiva"><i data-feather="chevron-right" aria-hidden="true"></i></button>
+            </nav>
+          </div>
           <div id="movimenti-table" class="output-container movimenti-output">Caricamento movimenti...</div>
+          <div id="movimenti-search-pagination" hidden>
+            <nav class="movimenti-month-nav movimenti-pagination-controls" aria-label="Paginazione ricerca movimenti">
+              <button id="movimenti-search-previous" class="movimenti-month-nav-button" type="button" disabled aria-label="Pagina precedente"><i data-feather="chevron-left" aria-hidden="true"></i></button>
+              <span id="movimenti-search-page-label" class="movement-tags-status" aria-live="polite"></span>
+              <button id="movimenti-search-next" class="movimenti-month-nav-button" type="button" disabled aria-label="Pagina successiva"><i data-feather="chevron-right" aria-hidden="true"></i></button>
+            </nav>
+          </div>
         </section>
       </div>
     </main>
@@ -163,10 +223,25 @@
             <input id="movement-description" type="text" name="description" placeholder="Descrizione movimento">
           </label>
 
+
           <label>
             <span>Importo</span>
             <input id="movement-amount" type="text" name="amount" inputmode="decimal" placeholder="0,00">
           </label>
+
+          <fieldset id="movement-tags" class="movement-tags">
+            <legend>TAG</legend>
+            <button id="movement-tags-toggle" class="movement-tags-control" type="button" aria-expanded="false" aria-controls="movement-tags-list-panel">
+              <span id="movement-tag-chips" class="movement-tag-chips"></span>
+              <span class="movement-tags-chevron" aria-hidden="true">⌄</span>
+            </button>
+            <div id="movement-tags-list-panel" class="movement-tag-panel" hidden>
+              <label for="movement-tags-search">Cerca Tag</label>
+              <input id="movement-tags-search" type="search" placeholder="Cerca per nome">
+              <div id="movement-tags-list" class="movement-tags-list"></div>
+            </div>
+            <div id="movement-tags-status" class="movement-tags-status" role="status" aria-live="polite"></div>
+          </fieldset>
 
           <div class="movement-options-row">
             <div class="switch-group">
@@ -193,7 +268,7 @@
               <div id="current-balance-preview" class="modal-balance-value">€ 0,00</div>
             </div>
             <div class="modal-balance-item">
-              <div class="modal-balance-label">Saldo dopo inserimento</div>
+              <div class="modal-balance-label">Saldo dopo salvataggio</div>
               <div id="next-balance-preview" class="modal-balance-value">€ 0,00</div>
             </div>
           </div>

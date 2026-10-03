@@ -2,3 +2,5 @@
 .env
 node_modules/
 exports/
+
+supabase/.temp/
