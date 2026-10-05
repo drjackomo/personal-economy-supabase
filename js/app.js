@@ -68,7 +68,6 @@ let movementSaving = false;
 let movementEditRequest = 0;
 
 const movementTypeSwitch = document.getElementById("tipoSwitch");
-const movementInTotalsSwitch = document.getElementById("consuntivoSwitch");
 const currentBalancePreview = document.getElementById("current-balance-preview");
 const nextBalancePreview = document.getElementById("next-balance-preview");
 const movementModalError = document.getElementById("movement-modal-error");
@@ -837,6 +836,7 @@ async function initAuthenticatedApp(user) {
   if (movimentiTableElement && movimentiMonthSelect && movimentiYearSelect && applyMovimentiFilterButton) {
     initMovimentiFilters();
     initMovimentiFilterPanel();
+    initMovimentiPanelCollapse();
     initMovimentiMonthNavigation();
     if (
       movementModal &&
@@ -849,7 +849,6 @@ async function initAuthenticatedApp(user) {
       movementDescriptionInput &&
       movementAmountInput &&
       movementTypeSwitch &&
-      movementInTotalsSwitch &&
       currentBalancePreview &&
       nextBalancePreview &&
       movementModalError
@@ -4010,7 +4009,21 @@ async function loadTransactions() {
   renderTransactionsTable(data);
 }
 
+function resetMovimentiSelection() {
+  movimentiTableElement.selectedMovimenti = new Set();
+  renderMovimentiSelectedSummary();
+}
+
+function renderMovimentiSelectedSummary() {
+  const summary = calculateSummary([...(movimentiTableElement.selectedMovimenti || [])]);
+  for (const [key, value] of Object.entries({ income: summary.income, expense: summary.expense, net: summary.total })) {
+    const element = document.getElementById(`movimenti-selected-summary-${key}`);
+    if (element) setSummaryAmount(element, value);
+  }
+}
+
 function renderMovimentiTable(transactions) {
+  resetMovimentiSelection();
   movimentiTableElement.textContent = "";
 
   if (!transactions.length) {
@@ -4018,7 +4031,7 @@ function renderMovimentiTable(transactions) {
     return;
   }
 
-  const columns = ["Data", "Descrizione", "Movimento", "CC Fineco", "In cons.", "Azioni"];
+  const columns = ["Data", "Descrizione", "Tag", "Movimento", "CC Fineco", "Azioni"];
   const table = document.createElement("table");
   const thead = document.createElement("thead");
   const tbody = document.createElement("tbody");
@@ -4031,9 +4044,9 @@ function renderMovimentiTable(transactions) {
     const columnClasses = [
       "date-column",
       "description-column",
+      "tags-column",
       "amount-column",
       "balance-column",
-      "in-totals-column",
       "actions-column",
     ];
 
@@ -4047,12 +4060,36 @@ function renderMovimentiTable(transactions) {
   transactions.forEach((transaction) => {
     const row = document.createElement("tr");
     const amount = Number(transaction.amount);
+    row.tabIndex = 0;
+    row.setAttribute("aria-label", `Seleziona movimento: ${transaction.description || formatDate(transaction.date)}`);
+    row.setAttribute("aria-selected", "false");
+    const toggleSelection = () => {
+      const selected = movimentiTableElement.selectedMovimenti;
+      if (selected.has(transaction)) {
+        selected.delete(transaction);
+        row.classList.remove("is-selected");
+      } else {
+        selected.add(transaction);
+        row.classList.add("is-selected");
+      }
+      row.setAttribute("aria-selected", String(selected.has(transaction)));
+      renderMovimentiSelectedSummary();
+    };
+    row.addEventListener("click", (event) => {
+      if (event.target.closest("button, a, input, select, textarea")) return;
+      toggleSelection();
+    });
+    row.addEventListener("keydown", (event) => {
+      if (event.target !== row || !["Enter", " "].includes(event.key)) return;
+      event.preventDefault();
+      toggleSelection();
+    });
     const cells = [
       formatDate(transaction.date),
       transaction.description ?? "-",
+      "",
       formatEuro(transaction.amount),
       formatEuro(transaction.balance),
-      transaction.in_totals,
       "—",
     ];
 
@@ -4063,21 +4100,12 @@ function renderMovimentiTable(transactions) {
         td.classList.add("description-cell", "description-column");
       }
 
-      if (index === 2 && !Number.isNaN(amount)) {
+      if (index === 3 && !Number.isNaN(amount)) {
         td.classList.add("amount-cell", "amount-column", amount >= 0 ? "amount-positive" : "amount-negative");
       }
 
-      if (index === 3) {
-        td.classList.add("amount-cell", "balance-column");
-      }
-
       if (index === 4) {
-        td.classList.add("center-cell", "in-totals-column");
-        const statusDot = document.createElement("span");
-        statusDot.className = `status-dot ${cell ? "success" : "error"}`;
-        td.appendChild(statusDot);
-        row.appendChild(td);
-        return;
+        td.classList.add("amount-cell", "balance-column");
       }
 
       if (index === 5) {
@@ -4106,7 +4134,8 @@ function renderMovimentiTable(transactions) {
       }
 
       td.textContent = cell;
-      if (index === 1) {
+      if (index === 2) {
+        td.classList.add("tags-column");
         const tags = (transaction.tags || (transaction.transaction_tags || []).map((association) => association.tags)).filter(Boolean);
         if (tags.length) {
           const chips = document.createElement("div");
@@ -4139,6 +4168,7 @@ function renderMovimentiTable(transactions) {
 }
 
 function renderMovimentiState(className, message, withSpinner = false) {
+  resetMovimentiSelection();
   movimentiTableElement.textContent = "";
 
   const stateElement = document.createElement("div");
@@ -4453,45 +4483,75 @@ function initMovimentiFilters() {
   movimentiYearSelect.value = String(currentYear);
 }
 
+function initMovimentiPanelCollapse() {
+  const layout = document.getElementById("movimenti-layout");
+  const content = document.getElementById("movimenti-search-panel-content");
+  const toggle = document.getElementById("movimenti-search-panel-toggle");
+  if (!layout || !content || !toggle) return;
+  toggle.addEventListener("click", () => {
+    const collapsed = !content.hidden;
+    content.hidden = collapsed;
+    if (collapsed) layout.classList.add("is-search-collapsed");
+    else layout.classList.remove("is-search-collapsed");
+    toggle.setAttribute("aria-expanded", String(!collapsed));
+    toggle.setAttribute("aria-label", collapsed ? "Apri pannello di ricerca" : "Chiudi pannello di ricerca");
+    toggle.textContent = collapsed ? "›" : "‹";
+  });
+}
+
 function initMovimentiFilterPanel() {
   const form = document.getElementById("movimenti-search-form");
   if (!form) return;
-  const element = (suffix) => document.getElementById(`movimenti-search-tags-${suffix}`);
-  const selector = {
-    chips: document.getElementById("movimenti-search-tag-chips"),
-    list: element("list"), search: element("query"), catalog: [],
-    selectedIds: new Set(), emptyLabel: "Seleziona Tag",
-  };
-  initMovimentiSearchControls(form, selector);
-  const toggle = element("toggle");
-  const panel = element("panel");
-  const status = element("status");
-  const retry = element("retry");
+  const makeSelector = (prefix, chipsId, emptyLabel) => ({
+    chips: document.getElementById(chipsId),
+    list: document.getElementById(`${prefix}-list`),
+    search: document.getElementById(`${prefix}-query`),
+    catalog: [], selectedIds: new Set(), emptyLabel, prefix,
+  });
+  const selector = makeSelector("movimenti-search-tags", "movimenti-search-tag-chips", "Seleziona Tag");
+  const excludeSelector = makeSelector("movimenti-search-exclude-tags", "movimenti-search-exclude-tag-chips", "Escludi Tag");
+  selector.peer = excludeSelector;
+  excludeSelector.peer = selector;
+  initMovimentiSearchControls(form, selector, excludeSelector);
+  const selectors = [selector, excludeSelector];
   const loadCatalog = async () => {
-    toggle.disabled = true;
-    retry.hidden = true;
-    status.classList.remove("is-error");
-    status.textContent = "Caricamento Tag...";
+    for (const current of selectors) {
+      document.getElementById(`${current.prefix}-toggle`).disabled = true;
+      document.getElementById(`${current.prefix}-retry`).hidden = true;
+      const status = document.getElementById(`${current.prefix}-status`);
+      status.classList.remove("is-error");
+      status.textContent = "Caricamento Tag...";
+    }
     try {
-      selector.catalog = await fetchTagsCatalog();
-      renderMovementTagSelector(selector);
-      status.textContent = "";
-      toggle.disabled = false;
+      const catalog = await fetchTagsCatalog();
+      for (const current of selectors) {
+        current.catalog = catalog;
+        renderMovementTagSelector(current);
+        document.getElementById(`${current.prefix}-status`).textContent = "";
+        document.getElementById(`${current.prefix}-toggle`).disabled = false;
+      }
     } catch (error) {
-      status.textContent = `Errore caricamento Tag: ${error.message || error}`;
-      status.classList.add("is-error");
-      retry.hidden = false;
+      for (const current of selectors) {
+        const status = document.getElementById(`${current.prefix}-status`);
+        status.textContent = `Errore caricamento Tag: ${error.message || error}`;
+        status.classList.add("is-error");
+        document.getElementById(`${current.prefix}-retry`).hidden = false;
+      }
     }
   };
-  toggle.addEventListener("click", () => {
-    setMovementTagPanel(panel, toggle, panel.hidden);
-    if (!panel.hidden) selector.search.focus();
-  });
-  selector.search.addEventListener("input", () => renderMovementTagSelector(selector));
-  retry.addEventListener("click", loadCatalog);
-  document.addEventListener("click", (event) => {
-    if (!toggle.contains(event.target) && !panel.contains(event.target)) setMovementTagPanel(panel, toggle, false);
-  });
+  for (const current of selectors) {
+    const toggle = document.getElementById(`${current.prefix}-toggle`);
+    const panel = document.getElementById(`${current.prefix}-panel`);
+    toggle.addEventListener("click", () => {
+      setMovementTagPanel(panel, toggle, panel.hidden);
+      if (!panel.hidden) current.search.focus();
+    });
+    current.search.addEventListener("input", () => renderMovementTagSelector(current));
+    document.getElementById(`${current.prefix}-retry`).addEventListener("click", loadCatalog);
+    document.addEventListener("click", (event) => {
+      if (!toggle.contains(event.target) && !panel.contains(event.target)) setMovementTagPanel(panel, toggle, false);
+    });
+  }
   loadCatalog();
 }
 
@@ -4586,10 +4646,14 @@ function renderMovementTagSelector(selector) {
     const checkbox = document.createElement("input");
     checkbox.type = "checkbox";
     checkbox.checked = selectedIds.has(id);
+    checkbox.disabled = selector.peer?.selectedIds.has(id) || false;
+    if (checkbox.disabled) label.title = "Tag già selezionato nell’altro filtro";
     checkbox.addEventListener("change", () => {
+      if (checkbox.checked && selector.peer?.selectedIds.has(id)) return;
       if (checkbox.checked) selectedIds.add(id);
       else selectedIds.delete(id);
       renderMovementTagSelector(selector);
+      if (selector.peer) renderMovementTagSelector(selector.peer);
       const index = [...list.children].findIndex((item) => item.dataset.tagId === id);
       list.children[index]?.querySelector("input")?.focus();
     });
@@ -5002,7 +5066,6 @@ async function openMovementModal() {
   movementDescriptionInput.value = "";
   movementAmountInput.value = "";
   movementTypeSwitch.checked = false;
-  movementInTotalsSwitch.checked = true;
   movementModalError.textContent = "";
   movementCurrentBalance = null;
   currentBalancePreview.textContent = "Carico...";
@@ -5557,7 +5620,6 @@ function getMovementFormData() {
       date,
       description,
       amount,
-      inTotals: movementInTotalsSwitch.checked,
     },
   };
 }
@@ -5622,7 +5684,7 @@ async function saveMovement() {
       p_description: value.description,
       p_amount: value.amount,
       p_account_id: movementAccountId,
-      p_in_totals: value.inTotals,
+      p_in_totals: true,
       p_tag_ids: [...movementSelectedTagIds],
     });
     if (saveError) throw saveError;
@@ -5674,7 +5736,6 @@ async function editMovement(txId) {
   movementDescriptionInput.value = data.description ?? "";
   movementAmountInput.value = formatAmountInput(amount);
   movementTypeSwitch.checked = amount > 0;
-  movementInTotalsSwitch.checked = Boolean(data.in_totals);
   movementCurrentBalance = null;
   currentBalancePreview.textContent = "Carico...";
   updateSaldoPreview();
@@ -12386,22 +12447,22 @@ async function loadMovimenti() {
   }
 }
 
-function buildTransactionSearchFilters(form, selectedTagIds, emptyTagsAsNull = false) {
+function buildTransactionSearchFilters(form, selectedTagIds, emptyTagsAsNull = false, excludedTagIds = []) {
   const fields = form.elements;
   const field = (name) => fields.namedItem(name);
   const amount = (name) => field(name).value === "" ? null : Number(field(name).value);
   const tagIds = [...selectedTagIds].sort();
   const movementType = field("movement_type")?.value
     || (field("income").checked && field("expense").checked ? "all" : field("income").checked ? "income" : "expense");
-  const inTotals = field("in_totals")?.value || "";
   return {
     p_tag_ids: tagIds.length || !emptyTagsAsNull ? tagIds : null,
+    p_exclude_tag_ids: excludedTagIds.size || excludedTagIds.length ? [...excludedTagIds].sort() : null,
     p_date_from: field("date_from").value || null,
     p_date_to: field("date_to").value || null,
     p_description: field("description").value.trim() || null,
     p_amount_from: amount("amount_from"), p_amount_to: amount("amount_to"),
     p_movement_type: movementType,
-    p_in_totals: inTotals === "" ? null : inTotals === "true",
+    p_in_totals: null,
     p_tag_presence: field("tag_presence")?.value || "all",
     p_sort: field("sort").value,
   };
@@ -12421,9 +12482,9 @@ function validateTransactionSearchFilters(filters) {
   return "";
 }
 
-async function fetchTransactionSearchPage(filters, page) {
+async function fetchTransactionSearchPage(filters, page, pageSize = 50) {
   const { data, error } = await supabaseClient.rpc("search_transactions", {
-    ...filters, p_page: page, p_page_size: 50,
+    ...filters, p_page: page, p_page_size: pageSize,
   });
   if (error) throw error;
   if (!data?.summary || !Array.isArray(data.items) || !data.pagination) throw new Error("Risposta di ricerca non valida.");
@@ -12433,7 +12494,8 @@ async function fetchTransactionSearchPage(filters, page) {
 // Integrated search owns only the view mode and filter snapshots, never mutations.
 const movimentiSearchState = {
   mode: "monthly", appliedFilters: null, pagination: null, summary: null,
-  requestId: 0, busy: false, form: null, selector: null,
+  requestId: 0, busy: false, form: null, selector: null, excludeSelector: null,
+  pageSize: 50,
 };
 
 function renderMovimentiSearchSummary() {
@@ -12451,11 +12513,13 @@ function renderMovimentiSearchSummary() {
 
 function updateMovimentiSearchPagination() {
   const state = movimentiSearchState;
+  const controls = document.getElementById("movimenti-search-controls");
+  if (controls) controls.hidden = state.mode !== "search";
   const pagination = state.pagination;
   for (const suffix of ["-top", ""]) {
     const wrapper = document.getElementById(`movimenti-search-pagination${suffix}`);
     if (!wrapper) continue;
-    wrapper.hidden = state.mode !== "search" || !pagination || pagination.total_pages <= 1;
+    wrapper.hidden = state.mode !== "search" || state.pageSize === "all" || !pagination || pagination.total_pages <= 1;
     document.getElementById(`movimenti-search-page-label${suffix}`).textContent = pagination
       ? `Pagina ${pagination.page} / ${pagination.total_pages}` : "";
     document.getElementById(`movimenti-search-previous${suffix}`).disabled = state.busy || !pagination?.has_previous;
@@ -12489,9 +12553,12 @@ async function refreshMovimentiAfterMutation() {
 
 async function runMovimentiSearch(filters, page = 1, { refreshAfterMutation = false } = {}) {
   const state = movimentiSearchState;
+  const pageSize = state.pageSize || 50;
+  if (pageSize === "all") page = 1;
   // Paging preserves the completed summary; a new search waits for its own summary.
   const retainedSummary = !refreshAfterMutation && state.mode === "search" && filters === state.appliedFilters ? state.summary : null;
-  const snapshot = { ...filters, p_tag_ids: filters.p_tag_ids ? [...filters.p_tag_ids] : null };
+  const snapshot = { ...filters, p_tag_ids: filters.p_tag_ids ? [...filters.p_tag_ids] : null,
+    p_exclude_tag_ids: filters.p_exclude_tag_ids ? [...filters.p_exclude_tag_ids] : null };
   const requestId = ++state.requestId;
   state.mode = "search";
   state.busy = true;
@@ -12504,10 +12571,27 @@ async function runMovimentiSearch(filters, page = 1, { refreshAfterMutation = fa
   updateMovimentiSearchPagination();
   renderMovimentiState("loading-state", "Ricerca movimenti...", true);
   try {
-    let data = await fetchTransactionSearchPage(snapshot, page);
+    let data = await fetchTransactionSearchPage(snapshot, page, pageSize === "all" ? 200 : pageSize);
     if (requestId !== state.requestId || state.mode !== "search") return;
+    if (pageSize === "all") {
+      const items = [...data.items];
+      for (let nextPage = 2; nextPage <= data.pagination.total_pages; nextPage++) {
+        const next = await fetchTransactionSearchPage(snapshot, nextPage, 200);
+        if (requestId !== state.requestId || state.mode !== "search") return;
+        if (next.pagination.total_pages !== data.pagination.total_pages
+          || ["count", "income", "expense", "net"].some((key) => Number(next.summary[key]) !== Number(data.summary[key]))) {
+          throw new Error("I risultati sono cambiati durante il caricamento. Ripeti la ricerca.");
+        }
+        items.push(...next.items);
+      }
+      const ids = new Set(items.map((item) => String(item.tx_id ?? item.id)));
+      if (items.length !== Number(data.summary.count) || ids.size !== items.length) {
+        throw new Error("Risultati incompleti o duplicati durante il caricamento. Ripeti la ricerca.");
+      }
+      data = { ...data, items, pagination: { ...data.pagination, page: 1, has_previous: false, has_next: false } };
+    }
     if (refreshAfterMutation && data.pagination.total_pages > 0 && page > data.pagination.total_pages) {
-      data = await fetchTransactionSearchPage(snapshot, data.pagination.total_pages);
+      data = await fetchTransactionSearchPage(snapshot, data.pagination.total_pages, pageSize);
       if (requestId !== state.requestId || state.mode !== "search") return;
     }
     if (refreshAfterMutation && data.pagination.total_pages === 0) {
@@ -12536,26 +12620,44 @@ async function runMovimentiSearch(filters, page = 1, { refreshAfterMutation = fa
 
 function resetMovimentiSearchFilters() {
   const state = movimentiSearchState;
+  state.pageSize = 50;
+  document.getElementById("movimenti-search-page-size").value = "50";
   state.form.reset();
   state.selector.selectedIds.clear();
-  state.selector.search.value = "";
+  state.excludeSelector?.selectedIds.clear();
+  for (const [selector, prefix] of [[state.selector, "movimenti-search-tags"], [state.excludeSelector, "movimenti-search-exclude-tags"]]) {
+    if (!selector) continue;
+    selector.selectedIds.clear();
+    selector.search.value = "";
+    renderMovementTagSelector(selector);
+    setMovementTagPanel(document.getElementById(`${prefix}-panel`), document.getElementById(`${prefix}-toggle`), false);
+  }
   state.form.elements.namedItem("date_from").setCustomValidity("");
-  renderMovementTagSelector(state.selector);
-  setMovementTagPanel(document.getElementById("movimenti-search-tags-panel"), document.getElementById("movimenti-search-tags-toggle"), false);
   loadMovimenti();
 }
 
-function initMovimentiSearchControls(form, selector) {
+function initMovimentiSearchControls(form, selector, excludeSelector = null) {
   const state = movimentiSearchState;
   state.form = form;
   state.selector = selector;
+  state.excludeSelector = excludeSelector;
+  const pageSizeSelect = document.getElementById("movimenti-search-page-size");
+  state.pageSize = 50;
+  pageSizeSelect.value = "50";
+  pageSizeSelect.addEventListener("change", () => {
+    const value = pageSizeSelect.value;
+    state.pageSize = value === "all" ? "all" : Number(value);
+    if (state.mode === "search" && state.appliedFilters) {
+      runMovimentiSearch({ ...state.appliedFilters }, 1);
+    }
+  });
   const dateFrom = form.elements.namedItem("date_from");
   form.addEventListener("input", () => dateFrom.setCustomValidity(""));
   form.addEventListener("change", () => dateFrom.setCustomValidity(""));
   form.addEventListener("submit", (event) => {
     event.preventDefault();
     if (state.busy) return;
-    const filters = buildTransactionSearchFilters(form, selector.selectedIds, true);
+    const filters = buildTransactionSearchFilters(form, selector.selectedIds, true, excludeSelector?.selectedIds);
     const validationError = validateTransactionSearchFilters(filters);
     dateFrom.setCustomValidity(validationError);
     if (!validationError) runMovimentiSearch(filters);
@@ -12570,7 +12672,7 @@ function initMovimentiSearchControls(form, selector) {
   });
   document.getElementById("movimenti-search-reset").addEventListener("click", resetMovimentiSearchFilters);
   const changePage = (delta) => {
-    if (state.mode === "search" && !state.busy && state.pagination && state.appliedFilters) {
+    if (state.mode === "search" && state.pageSize !== "all" && !state.busy && state.pagination && state.appliedFilters) {
       runMovimentiSearch(state.appliedFilters, state.pagination.page + delta);
     }
   };

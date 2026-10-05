@@ -2709,6 +2709,7 @@ button:disabled {
 }
 
 .movimenti-layout {
+  position: relative;
   display: grid;
   grid-template-columns: minmax(220px, 20%) 1fr;
   gap: 24px;
@@ -2719,6 +2720,82 @@ button:disabled {
 .summary-column {
   display: grid;
   gap: 16px;
+}
+
+.movimenti-search-panel {
+  position: relative;
+  min-width: 0;
+}
+
+.movimenti-panel-toggle {
+  position: absolute;
+  top: min(30vh, 300px);
+  left: -10px;
+  transform: translateY(-50%);
+  z-index: 1;
+  width: 24px;
+  height: 56px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px 0 0 8px;
+  background: var(--summary-accent, #3b82f6);
+  color: #ffffff;
+  box-shadow: none;
+  font-size: 24px;
+  cursor: pointer;
+}
+
+.movimenti-panel-toggle:hover {
+  background: #2563eb;
+}
+
+.movimenti-panel-toggle:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
+}
+
+#movimenti-search-panel-content[hidden] {
+  display: none;
+}
+
+.movimenti-layout.is-search-collapsed {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.is-search-collapsed .movimenti-search-panel {
+  display: none;
+}
+
+.is-search-collapsed .movimenti-table-column {
+  grid-column: 1;
+}
+
+.is-search-collapsed .movimenti-panel-toggle {
+  position: static;
+  display: flex;
+  align-items: center;
+  justify-self: start;
+  gap: 10px;
+  transform: none;
+  width: auto;
+  height: 36px;
+  margin: 0;
+  padding: 0 10px 0 0;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.is-search-collapsed .movimenti-panel-toggle::before {
+  content: "Filtri";
+  display: flex;
+  align-items: center;
+  align-self: stretch;
+  padding: 0 12px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 8px 0 0 8px;
+  background: #ffffff;
+  color: #475569;
+  font-size: 14px;
 }
 
 .summary-card,
@@ -2774,6 +2851,12 @@ button:disabled {
 .summary-card-month-flow {
   --summary-accent: #dc2626;
   --summary-glow: rgba(220, 38, 38, 0.12);
+}
+
+.summary-card-selected {
+  --summary-accent: #8b7bb8;
+  --summary-glow: rgba(139, 123, 184, 0.12);
+  background: #f7f4fc;
 }
 
 .summary-card h2,
@@ -2949,6 +3032,18 @@ button:disabled {
   justify-content: flex-end;
 }
 
+.movimenti-search-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.movimenti-search-controls[hidden] {
+  display: none;
+}
+
 .movimenti-filter-toolbar button {
   display: inline-flex;
   align-items: center;
@@ -3092,6 +3187,21 @@ button:disabled {
 
 .transactions-table tbody tr:hover {
   background: #eef6ff;
+}
+
+.movimenti-table tbody tr {
+  cursor: pointer;
+}
+
+.movimenti-table tbody tr.is-selected,
+.movimenti-table tbody tr.is-selected:hover {
+  background: #c7e0ff;
+  box-shadow: inset 4px 0 #2563eb;
+}
+
+.movimenti-table tbody tr:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: -2px;
 }
 
 .transactions-table td {
@@ -3354,39 +3464,6 @@ button:disabled {
   text-align: right;
 }
 
-.in-totals-column {
-  width: 100px;
-  min-width: 100px;
-  white-space: nowrap;
-}
-
-td.in-totals-column {
-  text-align: center;
-  vertical-align: middle;
-}
-
-.movimenti-table tbody td:nth-child(5) {
-  text-align: center;
-  vertical-align: middle;
-}
-
-.status-dot {
-  display: inline-block;
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-}
-
-.status-dot.success {
-  background-color: #16a34a;
-  box-shadow: 0 0 6px rgba(22, 163, 74, 0.6);
-}
-
-.status-dot.error {
-  background-color: #dc2626;
-  box-shadow: 0 0 6px rgba(220, 38, 38, 0.6);
-}
-
 .actions-column {
   width: 80px;
   text-align: center;
@@ -3505,7 +3582,8 @@ td.in-totals-column {
 
 .movement-form input,
 .movement-form select,
-.movement-form textarea {
+.movement-form textarea,
+.movement-select {
   width: 100%;
   border: 1px solid rgba(148, 163, 184, 0.35);
   border-radius: 12px;
@@ -3513,6 +3591,10 @@ td.in-totals-column {
   color: #0f172a;
   font-size: 15px;
   padding: 11px 12px;
+}
+
+.movement-select.movimenti-page-size {
+  width: auto;
 }
 
 .movement-form textarea {
@@ -4431,8 +4513,75 @@ td.in-totals-column {
   outline-offset: 3px;
 }
 
+/* One shared grid sizes descriptions from the current rows. The empty fourth
+   track absorbs spare width without adding a semantic table column. */
+.movimenti-table {
+  display: grid;
+  grid-template-columns: 110px max-content 260px minmax(28px, 1fr) 140px 140px 96px;
+  min-width: max-content;
+}
+
+.movimenti-table thead,
+.movimenti-table tbody {
+  display: contents;
+}
+
+.movimenti-table tr {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
+  border-bottom: 1px solid rgba(226, 232, 240, 0.88);
+}
+
+.movimenti-table thead tr {
+  background: #f8fafc;
+}
+
+.movimenti-table th,
+.movimenti-table td {
+  width: auto;
+  min-width: 0;
+  border-bottom: 0;
+}
+
+.movimenti-table tr > :nth-child(1) { grid-column: 1; }
+.movimenti-table tr > :nth-child(2) { grid-column: 2; }
+.movimenti-table tr > :nth-child(3) { grid-column: 3; }
+.movimenti-table tr > :nth-child(4) { grid-column: 5; }
+.movimenti-table tr > :nth-child(5) { grid-column: 6; }
+.movimenti-table tr > :nth-child(6) { grid-column: 7; }
+
+.movimenti-table .description-column {
+  max-width: 560px;
+  padding-right: 12px;
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  overflow-wrap: anywhere;
+}
+
+.movimenti-table .tags-column {
+  padding-left: 12px;
+  white-space: normal;
+}
+
+.movimenti-table .amount-column,
+.movimenti-table .balance-column {
+  text-align: right;
+}
+
+.movimenti-table .actions-column {
+  text-align: center;
+}
+
+.movimenti-output {
+  overflow-x: auto;
+}
+
 .movimenti-table .movement-table-tags {
-  display: inline;
+  display: flex;
+  flex-wrap: wrap;
+  max-width: 280px;
   margin: 0;
 }
 
@@ -4440,7 +4589,6 @@ td.in-totals-column {
   font-size: 12px;
   padding: 3px 7px;
   white-space: normal;
-  margin-left: 8px;
   vertical-align: middle;
 }
 
@@ -4469,6 +4617,6 @@ td.in-totals-column {
 
 @media (min-width: 1101px) {
   .movimenti-page .dashboard-cards {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 }

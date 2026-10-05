@@ -6,18 +6,18 @@
     <meta name="robots" content="noindex, nofollow, noarchive, nosnippet">
     <title>Movimenti - Personal Economy</title>
     <link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
-    <link rel="stylesheet" href="css/styles.css?v=20261003-search-integrated-cleanup-1">
+    <link rel="stylesheet" href="css/styles.css?v=20261004-selected-lilac-1">
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="https://unpkg.com/feather-icons"></script>
-    <script src="js/app.js?v=20261003-search-integrated-cleanup-1" defer></script>
+    <script src="js/app.js?v=20261004-filters-control-1" defer></script>
   </head>
   <body>
     <div id="navbar-root"></div>
 
     <main class="app movimenti-page">
-      <div class="movimenti-layout">
-        <aside class="summary-column" aria-label="Filtri movimenti">
-          <article class="movement-filter-card">
+      <div id="movimenti-layout" class="movimenti-layout">
+        <aside class="summary-column movimenti-search-panel" aria-label="Filtri movimenti">
+          <article id="movimenti-search-panel-content" class="movement-filter-card">
             <form id="movimenti-search-form" class="movement-form">
               <div class="movement-switch-field">
                 <div class="movement-filter-pair">
@@ -55,13 +55,23 @@
                 <div id="movimenti-search-tags-status" class="movement-tags-status" role="status" aria-live="polite"></div>
                 <button id="movimenti-search-tags-retry" class="secondary-action" type="button" hidden>Riprova caricamento Tag</button>
               </fieldset>
-              <select name="sort" aria-label="Ordinamento"><option value="date_desc">Data: più recenti</option><option value="date_asc">Data: meno recenti</option><option value="amount_desc">Importo: maggiore</option><option value="amount_asc">Importo: minore</option></select>
+              <fieldset class="movement-tags" aria-label="Escludi Tag">
+                <button id="movimenti-search-exclude-tags-toggle" aria-label="Escludi Tag" class="movement-tags-control" type="button" disabled aria-expanded="false" aria-controls="movimenti-search-exclude-tags-panel"><span id="movimenti-search-exclude-tag-chips" class="movement-tag-chips">Escludi Tag</span><span class="movement-tags-chevron" aria-hidden="true">⌄</span></button>
+                <div id="movimenti-search-exclude-tags-panel" class="movement-tag-panel" hidden>
+                  <input id="movimenti-search-exclude-tags-query" type="search" aria-label="Cerca Tag da escludere" placeholder="Cerca per nome">
+                  <div id="movimenti-search-exclude-tags-list" class="movement-tags-list"></div>
+                </div>
+                <div id="movimenti-search-exclude-tags-status" class="movement-tags-status" role="status" aria-live="polite"></div>
+                <button id="movimenti-search-exclude-tags-retry" class="secondary-action" type="button" hidden>Riprova caricamento Tag</button>
+              </fieldset>
+              <select class="movement-select" name="sort" aria-label="Ordinamento"><option value="date_desc">Data: più recenti</option><option value="date_asc">Data: meno recenti</option><option value="amount_desc">Importo: maggiore</option><option value="amount_asc">Importo: minore</option></select>
               <div class="admin-db-form-actions"><button id="movimenti-search-reset" class="secondary-action" type="button">Azzera filtri</button><button id="movimenti-search-submit" class="primary-action" type="submit">Cerca</button></div>
             </form>
           </article>
         </aside>
 
         <section class="movimenti-table-column" aria-label="Tabella movimenti">
+          <button id="movimenti-search-panel-toggle" class="movimenti-panel-toggle" type="button" aria-expanded="true" aria-controls="movimenti-search-panel-content" aria-label="Chiudi pannello di ricerca">‹</button>
           <div class="movimenti-filter-toolbar" aria-label="Filtro periodo movimenti">
             <div class="movimenti-month-nav" aria-label="Navigazione mesi">
               <button id="movimenti-prev-month" class="movimenti-month-nav-button" type="button" aria-label="Mese precedente">
@@ -97,10 +107,6 @@
 
             <button id="apply-movimenti-filter" type="button">Applica</button>
             <button id="open-movement-modal" class="primary-action" type="button">+ Movimento</button>
-            <button id="open-update-month-toolbar" class="primary-action" type="button">
-              <i data-feather="refresh-cw" aria-hidden="true"></i>
-              Aggiorna mese
-            </button>
             <button id="open-revolut-modal" class="revolut-action" type="button">
               <i data-feather="credit-card" aria-hidden="true"></i>
               Revolut
@@ -144,6 +150,12 @@
                 <strong id="monthly-total" class="summary-value">€ 0,00</strong>
               </div>
             </article>
+            <article id="movimenti-selected-summary" class="summary-card summary-card-selected" aria-live="polite">
+              <h2>Selezionati</h2>
+              <div class="summary-row"><span>Entrate</span><strong id="movimenti-selected-summary-income" class="summary-income">€ 0,00</strong></div>
+              <div class="summary-row"><span>Uscite</span><strong id="movimenti-selected-summary-expense" class="summary-expense">€ 0,00</strong></div>
+              <div class="summary-row"><span>Consuntivo</span><strong id="movimenti-selected-summary-net" class="summary-value">€ 0,00</strong></div>
+            </article>
             <article id="movimenti-search-summary" class="movement-filter-card summary-card-year-total movimenti-search-summary" hidden aria-live="polite">
               <header class="movimenti-search-summary-heading">
                 <h2>Risultati ricerca</h2>
@@ -156,12 +168,21 @@
           </div>
           <div id="movimenti-page-message" class="movimenti-page-message" aria-live="polite"></div>
 
+          <div id="movimenti-search-controls" class="movimenti-search-controls" hidden>
+              <select id="movimenti-search-page-size" class="movement-select movimenti-page-size" aria-label="Risultati per pagina">
+                <option value="10">10</option>
+                <option value="15">15</option>
+                <option value="25">25</option>
+                <option value="50" selected>50</option>
+                <option value="all">Tutti</option>
+              </select>
           <div id="movimenti-search-pagination-top" hidden>
             <nav class="movimenti-month-nav movimenti-pagination-controls" aria-label="Paginazione ricerca movimenti">
               <button id="movimenti-search-previous-top" class="movimenti-month-nav-button" type="button" disabled aria-label="Pagina precedente"><i data-feather="chevron-left" aria-hidden="true"></i></button>
               <span id="movimenti-search-page-label-top" class="movement-tags-status" aria-live="polite"></span>
               <button id="movimenti-search-next-top" class="movimenti-month-nav-button" type="button" disabled aria-label="Pagina successiva"><i data-feather="chevron-right" aria-hidden="true"></i></button>
             </nav>
+          </div>
           </div>
           <div id="movimenti-table" class="output-container movimenti-output">Caricamento movimenti...</div>
           <div id="movimenti-search-pagination" hidden>
@@ -253,13 +274,6 @@
               <span class="switch-label right">Entrata</span>
             </div>
 
-            <div class="movement-switch-inline">
-              <span>In consuntivo</span>
-              <label class="switch">
-                <input type="checkbox" id="consuntivoSwitch" checked>
-                <span class="slider"></span>
-              </label>
-            </div>
           </div>
 
           <div class="movement-balance-box">

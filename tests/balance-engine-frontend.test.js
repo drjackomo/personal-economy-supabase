@@ -45,6 +45,7 @@ test("update submits one atomic RPC, preserves account and bigint tag strings", 
   assert.equal(c.calls.length, 1);
   assert.equal(c.calls[0].name, "save_transaction");
   assert.equal(c.calls[0].params.p_operation, "update");
+  assert.equal(c.calls[0].params.p_in_totals, true);
   assert.equal(c.calls[0].params.p_account_id, "OTHER_ACCOUNT");
   assert.equal(c.calls[0].params.p_tag_ids[0], "9007199254740993");
   assert.equal("balance" in c.calls[0].params, false);
@@ -112,4 +113,13 @@ test("old engine and direct tag synchronization removed; preview performs no ari
   const c = context(["updateSaldoPreview"]);
   c.nextBalancePreview = {}; c.updateSaldoPreview();
   assert.equal(c.nextBalancePreview.textContent, "Aggiornato al salvataggio");
+});
+
+ test("new movement always saves in_totals true even with a stale false form value", async () => {
+  const c = context(["saveMovement"]);
+  c.modalMode = "create";
+  await c.saveMovement();
+  assert.equal(c.calls[0].params.p_operation, "insert");
+  assert.equal(c.calls[0].params.p_in_totals, true);
+  assert.equal(c.closed, true);
 });
